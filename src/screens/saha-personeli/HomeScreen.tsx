@@ -10,6 +10,7 @@ import RequestCard from '../../components/RequestCard';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useAuthStore } from '../../store/authStore';
+import { canCreateLegacyRequest } from '../../domain/request/legacyAdapter';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
 
@@ -58,9 +59,11 @@ export default function HomeScreen() {
           </Text>
         }
       />
-      <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('DepartmentSelect')}>
-        <Text style={{ color: colors.white, fontSize: 28, lineHeight: 28 }}>+</Text>
-      </TouchableOpacity>
+      {user && canCreateLegacyRequest(user.role) && (
+        <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('DepartmentSelect')}>
+          <Text style={{ color: colors.white, fontSize: 28, lineHeight: 28 }}>+</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

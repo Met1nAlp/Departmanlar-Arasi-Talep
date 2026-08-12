@@ -60,26 +60,4 @@ export default function IncomingRequestsScreen() {
       />
     </View>
   );
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.white }}>
-      <FlatList
-        data={requests}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.md }}
-        renderItem={({ item }) => (
-          <RequestCard
-            request={item}
-            productName={products[item.productId]}
-            onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-          />
-        )}
-        ListEmptyComponent={
-          <Text style={[typography.body, { color: colors.textMuted, textAlign: 'center', marginTop: spacing.xl }]}>
-            Gelen talep yok
-          </Text>
-        }
-      />
-    </View>
-  );
 }

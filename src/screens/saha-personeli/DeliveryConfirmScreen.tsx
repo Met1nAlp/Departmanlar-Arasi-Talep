@@ -6,6 +6,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { updateRequestStatus } from '../../api/requests';
+import { useAuthStore } from '../../store/authStore';
+import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
@@ -13,13 +15,20 @@ type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
 export default function DeliveryConfirmScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
+  const user = useAuthStore((s) => s.user);
   const [confirming, setConfirming] = useState(false);
 
+  // RBAC savunması: bu ekrana yalnızca RequestTrackingScreen'den, yetkili bir
+  // rolle geliniyor olması beklenir. Yine de derin bağlantı/rol değişimi gibi
+  // durumlara karşı burada da kontrol edilir (bkz. RequestPolicies.canClose).
+  const allowed = user ? canConfirmDelivery(user.role) : false;
+
   const handleConfirm = async () => {
+    if (!allowed) return;
     setConfirming(true);
     await updateRequestStatus(route.params.requestId, 'TESLIM_EDILDI');
     setConfirming(false);
-    navigation.navigate('Home');
+    navigation.popToTop();
   };
 
   return (
@@ -30,7 +39,7 @@ export default function DeliveryConfirmScreen() {
       <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.sm, textAlign: 'center' }]}>
         Onayladığınızda ilgili departmana "Ürün İletildi" bildirimi gönderilecek.
       </Text>
-      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={confirming}>
+      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={confirming || !allowed}>
         {confirming ? <ActivityIndicator color={colors.white} /> : (
           <Text style={{ color: colors.white, fontWeight: '600' }}>Evet, Teslim Aldım</Text>
         )}

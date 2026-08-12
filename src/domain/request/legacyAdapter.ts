@@ -22,7 +22,7 @@
 
 import type { Role } from '../../contracts/types';
 import { LEGACY_ROLE_MAP } from '../../contracts/types';
-import { canAcknowledgeOrPrepare, canClose, type PolicyContext } from './RequestPolicies';
+import { canAcknowledgeOrPrepare, canClose, canCreate, type PolicyContext } from './RequestPolicies';
 
 // Bu tipler src/types/index.ts ile birebir aynı tutulur (import etmiyoruz ki
 // domain katmanı legacy tiplere bağımlı olmasın — sadece string literal paylaşıyoruz).
@@ -73,4 +73,12 @@ export function canConfirmDelivery(actorLegacyRole: LegacyRole): boolean {
   const ctx: PolicyContext = { actorUserId: 'self', actorRole: toDomainRole(actorLegacyRole) };
   const fakeRequestOwnedBySelf = { requesterUserId: 'self' } as Parameters<typeof canClose>[0];
   return canClose(fakeRequestOwnedBySelf, ctx);
+}
+
+/**
+ * "Yeni çağrı" başlatma yetkisi (Home ekranındaki + butonu). RBAC: plan Bölüm 6.3
+ * "Çağrı oluştur" satırı — PLANNER hariç herkes oluşturabilir.
+ */
+export function canCreateLegacyRequest(actorLegacyRole: LegacyRole): boolean {
+  return canCreate({ actorUserId: 'self', actorRole: toDomainRole(actorLegacyRole) });
 }
