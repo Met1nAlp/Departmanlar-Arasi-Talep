@@ -1,16 +1,24 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+// src/screens/saha-personeli/DeliveryConfirmScreen.tsx
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
+import { updateRequestStatus } from '../../api/requests';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
+type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
 
 export default function DeliveryConfirmScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<Rt>();
+  const [confirming, setConfirming] = useState(false);
 
-  const handleConfirm = () => {
-    // Faz 2'de: api.updateRequestStatus(requestId, 'TESLIM_EDILDI')
+  const handleConfirm = async () => {
+    setConfirming(true);
+    await updateRequestStatus(route.params.requestId, 'TESLIM_EDILDI');
+    setConfirming(false);
     navigation.navigate('Home');
   };
 
@@ -22,8 +30,10 @@ export default function DeliveryConfirmScreen() {
       <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.sm, textAlign: 'center' }]}>
         Onayladığınızda ilgili departmana "Ürün İletildi" bildirimi gönderilecek.
       </Text>
-      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-        <Text style={{ color: colors.white, fontWeight: '600' }}>Evet, Teslim Aldım</Text>
+      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={confirming}>
+        {confirming ? <ActivityIndicator color={colors.white} /> : (
+          <Text style={{ color: colors.white, fontWeight: '600' }}>Evet, Teslim Aldım</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -31,11 +41,5 @@ export default function DeliveryConfirmScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white, justifyContent: 'center', padding: spacing.lg },
-  confirmButton: {
-    marginTop: spacing.xl,
-    backgroundColor: colors.blue,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
+  confirmButton: { marginTop: spacing.xl, backgroundColor: colors.blue, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
 });

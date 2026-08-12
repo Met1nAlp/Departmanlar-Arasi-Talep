@@ -1,11 +1,16 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { RequestStatus } from '../../types';
+// src/screens/departman-yetkilisi/RequestDetailScreen.tsx
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
+import { Request, RequestStatus } from '../../types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import StatusBadge from '../../components/StatusBadge';
-import { statusLabels } from '../../utils/statusLabels';
+import { getRequestById, updateRequestStatus } from '../../api/requests';
+import { getProductsByIds } from '../../api/products';
 
-// Bir durumdan sonra hangi durumlara geçilebileceği (Departman Yetkilisi kontrolündeki adımlar)
+type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
+
 const nextStatusMap: Partial<Record<RequestStatus, RequestStatus>> = {
   TALEP_ALINDI: 'HAZIRLANIYOR',
   HAZIRLANIYOR: 'HAZIR',
@@ -19,26 +24,55 @@ const nextActionLabel: Partial<Record<RequestStatus, string>> = {
 };
 
 export default function RequestDetailScreen() {
-  // GEÇİCİ: gerçek talep route.params.requestId ile backend'den çekilecek (Faz 2)
-  const [status, setStatus] = useState<RequestStatus>('TALEP_ALINDI');
-  const next = nextStatusMap[status];
+  const route = useRoute<Rt>();
+  const [request, setRequest] = useState<Request | null>(null);
+  const [productName, setProductName] = useState('');
+  const [updating, setUpdating] = useState(false);
 
-  const handleAdvance = () => {
-    if (next) setStatus(next);
-    // Faz 2'de: api.updateRequestStatus(requestId, next) + bildirim tetikleme
+  useEffect(() => {
+    getRequestById(route.params.requestId).then(async (req) => {
+      if (!req) return;
+      setRequest(req);
+      const [product] = await getProductsByIds([req.productId]);
+      setProductName(product?.name ?? '');
+    });
+  }, [route.params.requestId]);
+
+  const handleAdvance = async () => {
+    if (!request) return;
+    const next = nextStatusMap[request.status];
+    if (!next) return;
+    setUpdating(true);
+    const updated = await updateRequestStatus(request.id, next);
+    setRequest(updated);
+    setUpdating(false);
   };
+
+  if (!request) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: colors.white }}>
+        <ActivityIndicator size="large" color={colors.blue} />
+      </View>
+    );
+  }
+
+  const next = nextStatusMap[request.status];
 
   return (
     <View style={styles.container}>
-      <Text style={[typography.h2, { color: colors.textPrimary }]}>Vida Seti M6</Text>
-      <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.xs }]}>Adet: 3</Text>
+      <Text style={[typography.h2, { color: colors.textPrimary }]}>{productName}</Text>
+      <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.xs }]}>
+        Adet: {request.quantity}
+      </Text>
       <View style={{ marginTop: spacing.md }}>
-        <StatusBadge status={status} />
+        <StatusBadge status={request.status} />
       </View>
 
       {next ? (
-        <TouchableOpacity style={styles.actionButton} onPress={handleAdvance}>
-          <Text style={{ color: colors.white, fontWeight: '600' }}>{nextActionLabel[status]}</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={handleAdvance} disabled={updating}>
+          {updating ? <ActivityIndicator color={colors.white} /> : (
+            <Text style={{ color: colors.white, fontWeight: '600' }}>{nextActionLabel[request.status]}</Text>
+          )}
         </TouchableOpacity>
       ) : (
         <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.lg }]}>
@@ -51,11 +85,5 @@ export default function RequestDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white, padding: spacing.lg },
-  actionButton: {
-    marginTop: spacing.xl,
-    backgroundColor: colors.blue,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
+  actionButton: { marginTop: spacing.xl, backgroundColor: colors.blue, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
 });

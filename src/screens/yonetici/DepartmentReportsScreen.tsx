@@ -1,15 +1,30 @@
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+// src/screens/yonetici/DepartmentReportsScreen.tsx
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { colors, spacing, typography, radius } from '../../constants/theme';
-
-// GEÇİCİ mock rapor verisi — Faz 6'da gerçek agregasyonla değişecek
-const departmentStats = [
-  { name: 'Depo', requestCount: 42 },
-  { name: 'Bakım', requestCount: 17 },
-  { name: 'Elektrik', requestCount: 9 },
-];
-const maxCount = Math.max(...departmentStats.map((d) => d.requestCount));
+import { getDepartmentStats } from '../../api/stats';
 
 export default function DepartmentReportsScreen() {
+  const [departmentStats, setDepartmentStats] = useState<{ name: string; requestCount: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getDepartmentStats().then((data) => {
+      setDepartmentStats(data);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: colors.white }}>
+        <ActivityIndicator size="large" color={colors.blue} />
+      </View>
+    );
+  }
+
+  const maxCount = Math.max(...departmentStats.map((d) => d.requestCount));
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.md }}>
       {departmentStats.map((d) => (

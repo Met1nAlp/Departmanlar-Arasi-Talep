@@ -1,34 +1,54 @@
-import { View, FlatList, Text, TouchableOpacity, StyleSheet } from 'react-native';
+// src/screens/saha-personeli/HomeScreen.tsx (güncellenmiş kısım)
+import { useEffect, useState } from 'react';
+import { View, FlatList, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
-import { Request } from '../../types';
+import { Request, Product } from '../../types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import RequestCard from '../../components/RequestCard';
-
-// GEÇİCİ mock veri — Faz 2'de useRequests() hook'u ile değişecek
-const mockRequests: Request[] = [
-  { id: 'r1', requesterId: 'user-saha_personeli', departmentId: 'dep-1', productId: 'p1', quantity: 3, status: 'HAZIRLANIYOR', deliveryMethod: 'elektrikli_transpalet', createdAt: new Date().toISOString() },
-  { id: 'r2', requesterId: 'user-saha_personeli', departmentId: 'dep-2', productId: 'p2', quantity: 1, status: 'YOLDA', deliveryMethod: 'elektrikli_transpalet', createdAt: new Date().toISOString() },
-];
-
-const mockProductNames: Record<string, string> = { p1: 'Vida Seti M6', p2: 'Kablo Kanalı 2m' };
+import { getRequests } from '../../api/requests';
+import { getProductsByIds } from '../../api/products';
+import { useAuthStore } from '../../store/authStore';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const user = useAuthStore((s) => s.user);
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [products, setProducts] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    getRequests({ userId: user.id }).then(async (reqs) => {
+      setRequests(reqs);
+      const productList = await getProductsByIds(reqs.map((r) => r.productId));
+      const nameMap = Object.fromEntries(productList.map((p) => [p.id, p.name]));
+      setProducts(nameMap);
+      setLoading(false);
+    });
+  }, [user]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.blue} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <FlatList
-        data={mockRequests}
+        data={requests}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md }}
         renderItem={({ item }) => (
           <RequestCard
             request={item}
-            productName={mockProductNames[item.productId]}
+            productName={products[item.productId]}
             onPress={() => navigation.navigate('RequestTracking', { requestId: item.id })}
           />
         )}
@@ -48,15 +68,8 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white },
   fab: {
-    position: 'absolute',
-    right: spacing.lg,
-    bottom: spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: radius.lg,
-    backgroundColor: colors.blue,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 3,
+    position: 'absolute', right: spacing.lg, bottom: spacing.lg,
+    width: 56, height: 56, borderRadius: radius.lg,
+    backgroundColor: colors.blue, justifyContent: 'center', alignItems: 'center', elevation: 3,
   },
 });

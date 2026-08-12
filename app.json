@@ -22,6 +22,12 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ürün QR kodunu okutmak için kameraya erişim gerekiyor."
+        }
+      ]
     ]
   }
 }

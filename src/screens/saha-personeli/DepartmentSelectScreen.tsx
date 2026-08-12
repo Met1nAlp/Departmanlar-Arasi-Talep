@@ -1,22 +1,34 @@
 // src/screens/saha-personeli/DepartmentSelectScreen.tsx
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Department } from '../../types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
-
-// GEÇİCİ mock veri — Faz 2'de backend'den çekilecek
-const departments: Department[] = [
-  { id: 'dep-1', name: 'Depo' },
-  { id: 'dep-2', name: 'Bakım' },
-  { id: 'dep-3', name: 'Elektrik' },
-];
+import { getDepartments } from '../../api/departments';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DepartmentSelect'>;
 
 export default function DepartmentSelectScreen() {
   const navigation = useNavigation<Nav>();
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getDepartments().then((deps) => {
+      setDepartments(deps);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.blue} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -39,11 +51,7 @@ export default function DepartmentSelectScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white, padding: spacing.md },
   option: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm,
   },
 });

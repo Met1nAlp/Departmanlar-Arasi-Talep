@@ -1,21 +1,41 @@
 // src/screens/saha-personeli/RequestTrackingScreen.tsx
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
-import { RequestStatus } from '../../types';
+import { Request } from '../../types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
+import { getRequestById } from '../../api/requests';
+import { useRequestUpdates } from '../../hooks/useRequestUpdates';
 
 type Rt = RouteProp<SahaPersoneliStackParamList, 'RequestTracking'>;
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'RequestTracking'>;
 
-// GEÇİCİ: gerçek durumu route.params.requestId ile backend'den çekeceğiz (Faz 2)
-const mockCurrentStatus: RequestStatus = 'YOLDA';
-
 export default function RequestTrackingScreen() {
+  const route = useRoute<Rt>();
   const navigation = useNavigation<Nav>();
-  const currentIndex = statusOrder.indexOf(mockCurrentStatus);
+  const [request, setRequest] = useState<Request | null>(null);
+
+  useEffect(() => {
+    getRequestById(route.params.requestId).then((req) => {
+      if (req) setRequest(req);
+    });
+  }, [route.params.requestId]);
+
+  // YENİ: departman durumu değiştirdiği anda bu ekran otomatik güncellenir
+  useRequestUpdates(setRequest, route.params.requestId);
+
+  if (!request) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: colors.white }}>
+        <ActivityIndicator size="large" color={colors.blue} />
+      </View>
+    );
+  }
+
+  const currentIndex = statusOrder.indexOf(request.status);
 
   return (
     <View style={styles.container}>
@@ -31,10 +51,10 @@ export default function RequestTrackingScreen() {
         );
       })}
 
-      {mockCurrentStatus === 'YOLDA' && (
+      {request.status === 'YOLDA' && (
         <TouchableOpacity
           style={styles.confirmButton}
-          onPress={() => navigation.navigate('DeliveryConfirm', { requestId: 'r1' })}
+          onPress={() => navigation.navigate('DeliveryConfirm', { requestId: request.id })}
         >
           <Text style={{ color: colors.white, fontWeight: '600' }}>Ürünü Teslim Aldım</Text>
         </TouchableOpacity>
@@ -47,11 +67,5 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.white, padding: spacing.lg },
   stepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg },
   dot: { width: 16, height: 16, borderRadius: 8 },
-  confirmButton: {
-    marginTop: spacing.lg,
-    backgroundColor: colors.blue,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    alignItems: 'center',
-  },
+  confirmButton: { marginTop: spacing.lg, backgroundColor: colors.blue, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
 });
