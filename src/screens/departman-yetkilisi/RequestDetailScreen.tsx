@@ -3,28 +3,27 @@ import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
-import { Request, RequestStatus } from '../../types';
+import { Request } from '../../types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import StatusBadge from '../../components/StatusBadge';
 import { getRequestById, updateRequestStatus } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { useAuthStore } from '../../store/authStore';
+import {
+  LEGACY_NEXT_STATUS,
+  LEGACY_NEXT_ACTION_LABEL,
+  canAdvanceLegacyStatus,
+} from '../../domain/request/legacyAdapter';
+
+// nextStatusMap / nextActionLabel artık domain/request/legacyAdapter.ts içinde tek
+// doğru kaynak olarak tutuluyor (plan Bölüm 6.3 RBAC + Bölüm 7.1 durum makinesiyle
+// hizalı). Bu ekran sadece o katmandan okur — kendi kuralını icat etmez.
 
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
 
-const nextStatusMap: Partial<Record<RequestStatus, RequestStatus>> = {
-  TALEP_ALINDI: 'HAZIRLANIYOR',
-  HAZIRLANIYOR: 'HAZIR',
-  HAZIR: 'YOLDA',
-};
-
-const nextActionLabel: Partial<Record<RequestStatus, string>> = {
-  TALEP_ALINDI: 'Hazırlamaya Başla',
-  HAZIRLANIYOR: '"Hazır" Olarak İşaretle',
-  HAZIR: 'Elektrikli Transpalet ile Yola Çık',
-};
-
 export default function RequestDetailScreen() {
   const route = useRoute<Rt>();
+  const user = useAuthStore((s) => s.user);
   const [request, setRequest] = useState<Request | null>(null);
   const [productName, setProductName] = useState('');
   const [updating, setUpdating] = useState(false);
@@ -40,7 +39,7 @@ export default function RequestDetailScreen() {
 
   const handleAdvance = async () => {
     if (!request) return;
-    const next = nextStatusMap[request.status];
+    const next = LEGACY_NEXT_STATUS[request.status];
     if (!next) return;
     setUpdating(true);
     const updated = await updateRequestStatus(request.id, next);
@@ -56,7 +55,10 @@ export default function RequestDetailScreen() {
     );
   }
 
-  const next = nextStatusMap[request.status];
+  const next = LEGACY_NEXT_STATUS[request.status];
+  // RBAC: plan Bölüm 6.3'e göre "Hazırlandı onayı" yalnızca SUPPLIER+ yapabilir.
+  // Rol kontrolü artık ekranda değil RequestPolicies üzerinden (bkz. legacyAdapter).
+  const allowedToAdvance = user ? canAdvanceLegacyStatus(user.role) : false;
 
   return (
     <View style={styles.container}>
@@ -68,10 +70,10 @@ export default function RequestDetailScreen() {
         <StatusBadge status={request.status} />
       </View>
 
-      {next ? (
+      {next && allowedToAdvance ? (
         <TouchableOpacity style={styles.actionButton} onPress={handleAdvance} disabled={updating}>
           {updating ? <ActivityIndicator color={colors.white} /> : (
-            <Text style={{ color: colors.white, fontWeight: '600' }}>{nextActionLabel[request.status]}</Text>
+            <Text style={{ color: colors.white, fontWeight: '600' }}>{LEGACY_NEXT_ACTION_LABEL[request.status]}</Text>
           )}
         </TouchableOpacity>
       ) : (
