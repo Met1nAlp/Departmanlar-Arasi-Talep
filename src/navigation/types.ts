@@ -1,5 +1,6 @@
 export type AuthStackParamList = {
   Login: undefined;
+  PinSession: undefined;
 };
 
 export type SahaPersoneliStackParamList = {

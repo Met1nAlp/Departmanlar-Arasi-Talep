@@ -10,13 +10,16 @@ import DepartmanYetkilisiNavigator from './DepartmanYetkilisiNavigator';
 import YoneticiNavigator from './YoneticiNavigator';
 
 export default function RootNavigator() {
-  const { user, isLoading, setLoading } = useAuthStore();
+  const activeSession = useAuthStore((s) => s.activeSession);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const hydrate = useAuthStore((s) => s.hydrate);
 
   useEffect(() => {
-    // GEÇİCİ: gerçek token kontrolü yok, o yüzden direkt kapatıyoruz.
-    // Faz 2'de burada AsyncStorage'dan token okuyup varsa login() çağıracağız.
-    setLoading(false);
-  }, []);
+    // Plan Bölüm 14.2: açılışta SecureStore'daki token'lar okunur; refresh
+    // token hâlâ geçerliyse yetkili oturumu geri yüklenir (personel PIN
+    // oturumu kalıcı tutulmaz — bkz. authStore.hydrate yorumu).
+    hydrate();
+  }, [hydrate]);
 
   if (isLoading) {
     return (
@@ -25,6 +28,8 @@ export default function RootNavigator() {
       </View>
     );
   }
+
+  const user = activeSession?.user ?? null;
 
   return (
     <NavigationContainer>
