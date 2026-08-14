@@ -28,6 +28,9 @@
           "cameraPermission": "Ürün QR kodunu okutmak için kameraya erişim gerekiyor."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "realtimeWsUrl": ""
+    }
   }
 }

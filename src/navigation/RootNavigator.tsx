@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../constants/theme';
+import ConnectionBanner from '../components/ConnectionBanner';
+import { connectRealtime, disconnectRealtime } from '../infrastructure/realtime/instance';
 
 import AuthNavigator from './AuthNavigator';
 import SahaPersoneliNavigator from './SahaPersoneliNavigator';
@@ -21,6 +23,20 @@ export default function RootNavigator() {
     hydrate();
   }, [hydrate]);
 
+  useEffect(() => {
+    // Plan Bölüm 9: gerçek zaman bağlantısı yalnızca bir personel PIN oturumu
+    // açıkken anlamlı (kanal aboneliği o kişinin bölümüne göre kurulur).
+    // Backend WS ucu henüz yoksa connectRealtime no-op'tur (bkz.
+    // config/realtimeConfig.ts), yani bu efekt bugün sessizce hiçbir şey
+    // yapmaz — bağlantı hazır olduğunda tek satır bile değişmeyecek.
+    if (activeSession) {
+      connectRealtime(activeSession.user);
+    } else {
+      disconnectRealtime();
+    }
+    return () => disconnectRealtime();
+  }, [activeSession]);
+
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white }}>
@@ -32,11 +48,14 @@ export default function RootNavigator() {
   const user = activeSession?.user ?? null;
 
   return (
-    <NavigationContainer>
-      {!user && <AuthNavigator />}
-      {user?.role === 'saha_personeli' && <SahaPersoneliNavigator />}
-      {user?.role === 'departman_yetkilisi' && <DepartmanYetkilisiNavigator />}
-      {user?.role === 'yonetici' && <YoneticiNavigator />}
-    </NavigationContainer>
+    <View style={{ flex: 1 }}>
+      <ConnectionBanner />
+      <NavigationContainer>
+        {!user && <AuthNavigator />}
+        {user?.role === 'saha_personeli' && <SahaPersoneliNavigator />}
+        {user?.role === 'departman_yetkilisi' && <DepartmanYetkilisiNavigator />}
+        {user?.role === 'yonetici' && <YoneticiNavigator />}
+      </NavigationContainer>
+    </View>
   );
 }
