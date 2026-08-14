@@ -6,7 +6,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { updateRequestStatus } from '../../api/requests';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
@@ -15,7 +15,7 @@ type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
 export default function DeliveryConfirmScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
   const [confirming, setConfirming] = useState(false);
 
   // RBAC savunması: bu ekrana yalnızca RequestTrackingScreen'den, yetkili bir

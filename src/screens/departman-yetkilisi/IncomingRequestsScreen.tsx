@@ -9,14 +9,14 @@ import { colors, spacing, typography } from '../../constants/theme';
 import RequestCard from '../../components/RequestCard';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import { useRequestUpdates } from '../../hooks/useRequestUpdates';
 
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'IncomingRequests'>;
 
 export default function IncomingRequestsScreen() {
   const navigation = useNavigation<Nav>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
   const [requests, setRequests] = useState<Request[]>([]);
   const [products, setProducts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);

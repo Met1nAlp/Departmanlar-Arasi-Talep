@@ -9,14 +9,14 @@ import { colors, spacing, typography, radius } from '../../constants/theme';
 import RequestCard from '../../components/RequestCard';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import { canCreateLegacyRequest } from '../../domain/request/legacyAdapter';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
   const [requests, setRequests] = useState<Request[]>([]);
   const [products, setProducts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);

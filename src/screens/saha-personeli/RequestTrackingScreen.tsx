@@ -9,7 +9,7 @@ import { colors, spacing, typography, radius } from '../../constants/theme';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
 import { getRequestById } from '../../api/requests';
 import { useRequestUpdates } from '../../hooks/useRequestUpdates';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 
 type Rt = RouteProp<SahaPersoneliStackParamList, 'RequestTracking'>;
@@ -18,7 +18,7 @@ type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'RequestTracki
 export default function RequestTrackingScreen() {
   const route = useRoute<Rt>();
   const navigation = useNavigation<Nav>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
   const [request, setRequest] = useState<Request | null>(null);
 
   useEffect(() => {

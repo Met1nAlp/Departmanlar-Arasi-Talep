@@ -8,7 +8,7 @@ import { colors, spacing, typography, radius } from '../../constants/theme';
 import StatusBadge from '../../components/StatusBadge';
 import { getRequestById, updateRequestStatus } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import {
   LEGACY_NEXT_STATUS,
   LEGACY_NEXT_ACTION_LABEL,
@@ -23,7 +23,7 @@ type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
 
 export default function RequestDetailScreen() {
   const route = useRoute<Rt>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
   const [request, setRequest] = useState<Request | null>(null);
   const [productName, setProductName] = useState('');
   const [updating, setUpdating] = useState(false);

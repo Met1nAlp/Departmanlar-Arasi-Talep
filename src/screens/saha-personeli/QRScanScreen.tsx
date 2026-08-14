@@ -8,7 +8,7 @@ import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { getProductByQrCode } from '../../api/products';
 import { createRequest } from '../../api/requests';
-import { useAuthStore } from '../../store/authStore';
+import { useActiveUser } from '../../store/authStore';
 import { Product } from '../../types';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'QRScan'>;
@@ -20,7 +20,7 @@ const SUPPORTED_BARCODE_TYPES = ['qr', 'ean13', 'ean8', 'upc_a', 'code128'] as c
 export default function QRScanScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
-  const user = useAuthStore((s) => s.user);
+  const user = useActiveUser();
 
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
