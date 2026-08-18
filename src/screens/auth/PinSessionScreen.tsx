@@ -86,6 +86,7 @@ export default function PinSessionScreen() {
           {team.map((member) => (
             <TouchableOpacity
               key={member.id}
+              testID={`pin-member-${member.id}`}
               style={styles.memberRow}
               onPress={() => setSelectedMember(member)}
             >
@@ -126,6 +127,7 @@ export default function PinSessionScreen() {
             {row.map((key) => (
               <TouchableOpacity
                 key={key}
+                testID={`pin-key-${key}`}
                 style={styles.key}
                 onPress={() => handleKeyPress(key)}
                 disabled={submitting}

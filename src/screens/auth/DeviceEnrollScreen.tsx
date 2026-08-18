@@ -58,6 +58,7 @@ export default function DeviceEnrollScreen() {
         name="enrollCode"
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
+            testID="device-enroll-code-input"
             style={styles.input}
             placeholder={t('auth.deviceEnroll.codePlaceholder')}
             placeholderTextColor={colors.textMuted}
@@ -72,6 +73,7 @@ export default function DeviceEnrollScreen() {
       {errors.enrollCode && <Text style={styles.errorText}>{errors.enrollCode.message}</Text>}
 
       <TouchableOpacity
+        testID="device-enroll-submit"
         style={[styles.button, isSubmitting && styles.buttonDisabled]}
         onPress={handleSubmit(onSubmit)}
         disabled={isSubmitting}

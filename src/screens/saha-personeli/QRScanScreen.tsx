@@ -116,8 +116,14 @@ export default function QRScanScreen() {
         {product && !notFound && (
           <View style={{ marginTop: spacing.lg }}>
             <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xs }]}>Adet</Text>
-            <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} keyboardType="number-pad" />
-            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={submitting}>
+            <TextInput
+              testID="qr-quantity-input"
+              style={styles.input}
+              value={quantity}
+              onChangeText={setQuantity}
+              keyboardType="number-pad"
+            />
+            <TouchableOpacity testID="qr-submit-request" style={styles.submitButton} onPress={handleSubmit} disabled={submitting}>
               {submitting ? <ActivityIndicator color={colors.white} /> : (
                 <Text style={{ color: colors.white, fontWeight: '600' }}>Talebi Oluştur</Text>
               )}

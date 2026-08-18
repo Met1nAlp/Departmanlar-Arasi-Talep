@@ -60,7 +60,7 @@ export default function HomeScreen() {
         }
       />
       {user && canCreateLegacyRequest(user.role) && (
-        <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('DepartmentSelect')}>
+        <TouchableOpacity testID="home-new-request-fab" style={styles.fab} onPress={() => navigation.navigate('DepartmentSelect')}>
           <Text style={{ color: colors.white, fontSize: 28, lineHeight: 28 }}>+</Text>
         </TouchableOpacity>
       )}

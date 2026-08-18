@@ -59,6 +59,7 @@ export default function LoginScreen() {
         name="username"
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
+            testID="login-username-input"
             style={styles.input}
             placeholder={t('auth.login.usernamePlaceholder')}
             placeholderTextColor={colors.textMuted}
@@ -77,6 +78,7 @@ export default function LoginScreen() {
         name="password"
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
+            testID="login-password-input"
             style={styles.input}
             placeholder={t('auth.login.passwordPlaceholder')}
             placeholderTextColor={colors.textMuted}
@@ -90,6 +92,7 @@ export default function LoginScreen() {
       {errors.password && <Text style={styles.errorText}>{errors.password.message}</Text>}
 
       <TouchableOpacity
+        testID="login-submit"
         style={[styles.button, isSubmitting && styles.buttonDisabled]}
         onPress={handleSubmit(onSubmit)}
         disabled={isSubmitting}
