@@ -10,6 +10,7 @@ import { getProductByQrCode } from '../../api/products';
 import { createRequest } from '../../api/requests';
 import { useActiveUser } from '../../store/authStore';
 import { Product } from '../../types';
+import { parseGs1Barcode } from '../../domain/barcode/gs1Parser';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'QRScan'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'QRScan'>;
@@ -34,7 +35,16 @@ export default function QRScanScreen() {
     setScanned(true);
     setNotFound(false);
 
-    const result = await getProductByQrCode(data);
+    // Plan Bölüm 13.3: tedarikçi barkodu GS1-128/DataMatrix olabilir (AI
+    // önekli, örn. "0112345678901231..."). Bu durumda ürünü GTIN ile arıyoruz;
+    // değilse (kendi ürettiğimiz düz QR veya fabrika EAN/UPC) ham veriyle
+    // aranan eski davranışa düşüyoruz. NOT: legacy mockProducts'ta henüz gtin
+    // alanı yok — backend/contracts entegrasyonunda PART_BARCODE.parsed_gtin
+    // üzerinden gerçek eşleme yapılacak (bkz. legacyAdapter.ts deseni).
+    const gs1 = parseGs1Barcode(data);
+    const lookupCode = gs1?.gtin ?? data;
+
+    const result = await getProductByQrCode(lookupCode);
     if (result) {
       setProduct(result);
     } else {
