@@ -1,32 +1,45 @@
 // src/screens/departman-yetkilisi/RequestDetailScreen.tsx
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { View } from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
-import { Request } from '../../types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
-import StatusBadge from '../../components/StatusBadge';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Request, RequestStatus } from '../../types';
+import { Box } from '../../design-system/primitives/Box';
+import { Text } from '../../design-system/primitives/Text';
+import { Button } from '../../design-system/components/Button';
+import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
+import { RequestStatusStrip } from '../../design-system/components/RequestStatusStrip';
+import { LoadingView } from '../../design-system/components/LoadingView';
+import { spacing } from '../../design-system/tokens';
 import { getRequestById, updateRequestStatus } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useActiveUser } from '../../store/authStore';
 import {
-  LEGACY_NEXT_STATUS,
-  LEGACY_NEXT_ACTION_LABEL,
+  LEGACY_NEXT_STATUS as nextStatusMap,
+  LEGACY_NEXT_ACTION_LABEL as nextActionLabel,
   canAdvanceLegacyStatus,
 } from '../../domain/request/legacyAdapter';
 
-// nextStatusMap / nextActionLabel artık domain/request/legacyAdapter.ts içinde tek
-// doğru kaynak olarak tutuluyor (plan Bölüm 6.3 RBAC + Bölüm 7.1 durum makinesiyle
-// hizalı). Bu ekran sadece o katmandan okur — kendi kuralını icat etmez.
+// Durum geçişleri ve etiketleri artık domain/request/legacyAdapter.ts içinde
+// tek doğru kaynak olarak tutuluyor (Plan Bölüm 6.3 RBAC + Bölüm 7.1 durum
+// makinesiyle hizalı). Bu ekran o katmandan okur — kendi kuralını icat etmez.
 
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
+type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
+
+// Sadece "Hazır" ve sonraki adımlar onay ister — departmanı taahhüt altına
+// sokan kritik geçişler bunlar. "Hazırlamaya Başla" geri dönüşü kolay olduğu için onaysız.
+const stepsRequiringConfirm: RequestStatus[] = ['HAZIRLANIYOR', 'HAZIR'];
 
 export default function RequestDetailScreen() {
+  const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const user = useActiveUser();
   const [request, setRequest] = useState<Request | null>(null);
   const [productName, setProductName] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
 
   useEffect(() => {
     getRequestById(route.params.requestId).then(async (req) => {
@@ -37,55 +50,74 @@ export default function RequestDetailScreen() {
     });
   }, [route.params.requestId]);
 
-  const handleAdvance = async () => {
+  const handleAdvancePress = () => {
     if (!request) return;
-    const next = LEGACY_NEXT_STATUS[request.status];
+    const next = nextStatusMap[request.status];
     if (!next) return;
+
+    if (stepsRequiringConfirm.includes(request.status)) {
+      setConfirmVisible(true);
+    } else {
+      performAdvance();
+    }
+  };
+
+  const performAdvance = async () => {
+    if (!request) return;
+    const next = nextStatusMap[request.status];
+    if (!next) return;
+
+    setConfirmVisible(false);
     setUpdating(true);
     const updated = await updateRequestStatus(request.id, next);
     setRequest(updated);
     setUpdating(false);
   };
 
-  if (!request) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', backgroundColor: colors.white }}>
-        <ActivityIndicator size="large" color={colors.blue} />
-      </View>
-    );
-  }
+  if (!request) return <LoadingView />;
 
-  const next = LEGACY_NEXT_STATUS[request.status];
-  // RBAC: plan Bölüm 6.3'e göre "Hazırlandı onayı" yalnızca SUPPLIER+ yapabilir.
-  // Rol kontrolü artık ekranda değil RequestPolicies üzerinden (bkz. legacyAdapter).
+  const next = nextStatusMap[request.status];
+  // RBAC: Plan Bölüm 6.3'e göre "Hazırlandı onayı" yalnızca SUPPLIER+ yapabilir.
+  // Rol kontrolü ekranda değil RequestPolicies üzerinden (bkz. legacyAdapter).
   const allowedToAdvance = user ? canAdvanceLegacyStatus(user.role) : false;
 
   return (
-    <View style={styles.container}>
-      <Text style={[typography.h2, { color: colors.textPrimary }]}>{productName}</Text>
-      <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.xs }]}>
+    <Box style={{ flex: 1 }} background="white" padding="lg">
+      <Text variant="h2">{productName}</Text>
+      <Text variant="body" color="textSecondary" style={{ marginTop: spacing.xs }}>
         Adet: {request.quantity}
       </Text>
-      <View style={{ marginTop: spacing.md }}>
-        <StatusBadge status={request.status} />
-      </View>
+
+      <RequestStatusStrip currentStatus={request.status} />
 
       {next && allowedToAdvance ? (
-        <TouchableOpacity style={styles.actionButton} onPress={handleAdvance} disabled={updating}>
-          {updating ? <ActivityIndicator color={colors.white} /> : (
-            <Text style={{ color: colors.white, fontWeight: '600' }}>{LEGACY_NEXT_ACTION_LABEL[request.status]}</Text>
-          )}
-        </TouchableOpacity>
+        <View style={{ marginTop: spacing.md }}>
+          <Button
+            label={nextActionLabel[request.status]!}
+            onPress={handleAdvancePress}
+            loading={updating}
+          />
+          <Button
+            label="Bu Talebi Reddet"
+            onPress={() => navigation.navigate('RejectRequest', { requestId: request.id })}
+            variant="secondary"
+            style={{ marginTop: spacing.sm }}
+          />
+        </View>
       ) : (
-        <Text style={[typography.body, { color: colors.textMuted, marginTop: spacing.lg }]}>
+        <Text variant="body" color="textMuted" style={{ marginTop: spacing.lg }}>
           Bu talep için departman tarafında yapılacak başka işlem yok.
         </Text>
       )}
-    </View>
+
+      <ConfirmSheet
+        visible={confirmVisible}
+        title={nextActionLabel[request.status] ?? ''}
+        description="Bu işlem geri alınamaz ve ilgili tarafa bildirim gönderilir. Onaylıyor musunuz?"
+        confirmLabel="Onayla"
+        onConfirm={performAdvance}
+        onCancel={() => setConfirmVisible(false)}
+      />
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white, padding: spacing.lg },
-  actionButton: { marginTop: spacing.xl, backgroundColor: colors.blue, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
-});

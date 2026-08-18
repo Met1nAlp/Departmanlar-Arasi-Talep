@@ -6,8 +6,8 @@ import { field } from '@nozbe/watermelondb/decorators';
 export default class Department extends Model {
   static table = 'departments';
 
-  @field('code') code!: string;
-  @field('name') name!: string;
-  @field('type') type!: string; // 'PRODUCTION' | 'WAREHOUSE' | 'BOTH'
+  @field('code') code: string;
+  @field('name') name: string;
+  @field('type') type: string; // 'PRODUCTION' | 'WAREHOUSE' | 'BOTH'
   @field('parent_id') parentId?: string;
 }

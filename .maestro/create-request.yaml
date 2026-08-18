@@ -1,15 +1,15 @@
 appId: com.anonymous.talepuygulamasi
 ---
 # Plan Bölüm 12.4 offline-first akışı: saha personeli "+" ile yeni talep
-# başlatır, departman seçer, ürün ekranına ulaşır. Kamera okuma Maestro'da
-# simüle edilemediğinden bu akış QRScan ekranına ulaşmayı doğrular
-# (asıl createRequest -> outbox akışı Jest tarafında birim test edildi,
-# bkz. src/infrastructure/sync/__tests__/outboxScheduler.test.ts).
+# başlatır (öncelik seçimi -> departman seçimi -> QR tarama). Kamera okuma
+# Maestro'da simüle edilemediğinden bu akış QR tarama ekranına (ScanTarget)
+# ulaşmayı doğrular; createRequest/outbox mantığı Jest tarafında birim test
+# edildi (bkz. src/infrastructure/sync/__tests__/outboxScheduler.test.ts).
 - runFlow: login-and-pin-session.yaml
 - tapOn:
     id: "home-new-request-fab"
+- assertVisible: "Bu talebin önceliği nedir?"
+- tapOn: "Devam Et"
 - assertVisible: "Hangi departmandan talep edeceksiniz?"
 - tapOn: "Depo"
-- assertVisible:
-    text: "QR"
-    optional: true
+- assertVisible: "Ürünün kodunu kadraja alın"

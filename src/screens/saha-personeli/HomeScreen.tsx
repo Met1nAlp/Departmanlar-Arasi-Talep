@@ -1,16 +1,22 @@
-// src/screens/saha-personeli/HomeScreen.tsx (güncellenmiş kısım)
+// src/screens/saha-personeli/HomeScreen.tsx
 import { useEffect, useState } from 'react';
-import { View, FlatList, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
-import { Request, Product } from '../../types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
+import { Request } from '../../types';
+import { Box } from '../../design-system/primitives/Box';
+import { Pressable } from '../../design-system/primitives/Pressable';
+import { Text } from '../../design-system/primitives/Text';
+import { LoadingView } from '../../design-system/components/LoadingView';
+import { EmptyState } from '../../design-system/components/EmptyState';
+import { colors, spacing, radius } from '../../design-system/tokens';
 import RequestCard from '../../components/RequestCard';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useActiveUser } from '../../store/authStore';
 import { canCreateLegacyRequest } from '../../domain/request/legacyAdapter';
+import { Ionicons } from '@expo/vector-icons';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
 
@@ -32,20 +38,29 @@ export default function HomeScreen() {
     });
   }, [user]);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.blue} />
-      </View>
-    );
-  }
+  // Header'a Ayarlar butonu ekliyoruz — React Navigation'da bunun standart yolu budur.
+useEffect(() => {
+  navigation.setOptions({
+    headerRight: () => (
+      <Ionicons
+        name="settings-outline"
+        size={24}
+        color={colors.white}
+        style={{ marginRight: spacing.md }}
+        onPress={() => navigation.navigate('Settings')}
+      />
+    ),
+  });
+}, [navigation]);
+
+  if (loading) return <LoadingView />;
 
   return (
-    <View style={styles.container}>
+    <Box style={{ flex: 1 }} background="white">
       <FlatList
         data={requests}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.md }}
+        contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}
         renderItem={({ item }) => (
           <RequestCard
             request={item}
@@ -54,25 +69,53 @@ export default function HomeScreen() {
           />
         )}
         ListEmptyComponent={
-          <Text style={[typography.body, { color: colors.textMuted, textAlign: 'center', marginTop: spacing.xl }]}>
-            Henüz talebiniz yok
-          </Text>
+          <EmptyState
+            title="Henüz talebiniz yok"
+            description="Yeni bir talep oluşturmak için sağ alttaki + butonuna dokunun"
+            icon="cube-outline"
+          />
         }
       />
+      {/* RBAC: "Çağrı oluştur" yetkisi Plan Bölüm 6.3 tablosundan gelir
+          (PLANNER hariç herkes) — karar RequestPolicies'te, ekranda değil. */}
+            {/* RBAC: "Çağrı oluştur" yetkisi Plan Bölüm 6.3 tablosundan gelir
+          (PLANNER hariç herkes) — karar RequestPolicies'te, ekranda değil. */}
       {user && canCreateLegacyRequest(user.role) && (
-        <TouchableOpacity testID="home-new-request-fab" style={styles.fab} onPress={() => navigation.navigate('DepartmentSelect')}>
-          <Text style={{ color: colors.white, fontSize: 28, lineHeight: 28 }}>+</Text>
-        </TouchableOpacity>
+        <>
+          {/* İkinci FAB: çok kalemli (çoklu ürün) talep akışı — birincinin üstünde duruyor */}
+          <Pressable
+            onPress={() => navigation.navigate('PartSearchForCart')}
+            background="surface"
+            radius="lg"
+            style={{
+              position: 'absolute',
+              right: spacing.lg,
+              bottom: spacing.lg + 64 + spacing.sm,
+              width: 56,
+              height: 56,
+              borderWidth: 1,
+              borderColor: colors.blue,
+            }}
+            accessibilityLabel="Çok kalemli talep oluştur"
+          >
+            <Ionicons name="cart-outline" size={24} color={colors.blue} />
+          </Pressable>
+
+          {/* Birincil FAB: tek ürün, QR tarayarak hızlı talep */}
+          <Pressable
+            testID="home-new-request-fab"
+            onPress={() => navigation.navigate('PrioritySelect')}
+            background="blue"
+            radius="lg"
+            style={{ position: 'absolute', right: spacing.lg, bottom: spacing.lg, width: 64, height: 64 }}
+            accessibilityLabel="Yeni talep oluştur"
+          >
+            <Text variant="h1" color="white">
+              +
+            </Text>
+          </Pressable>
+        </>
       )}
-    </View>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white },
-  fab: {
-    position: 'absolute', right: spacing.lg, bottom: spacing.lg,
-    width: 56, height: 56, borderRadius: radius.lg,
-    backgroundColor: colors.blue, justifyContent: 'center', alignItems: 'center', elevation: 3,
-  },
-});

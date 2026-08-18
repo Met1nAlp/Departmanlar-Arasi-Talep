@@ -1,11 +1,15 @@
 // src/screens/saha-personeli/DepartmentSelectScreen.tsx
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Department } from '../../types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
+import { Box } from '../../design-system/primitives/Box';
+import { Pressable } from '../../design-system/primitives/Pressable';
+import { Text } from '../../design-system/primitives/Text';
+import { LoadingView } from '../../design-system/components/LoadingView';
+import { spacing } from '../../design-system/tokens';
 import { getDepartments } from '../../api/departments';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DepartmentSelect'>;
@@ -22,36 +26,32 @@ export default function DepartmentSelectScreen() {
     });
   }, []);
 
-  if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.blue} />
-      </View>
-    );
-  }
+  if (loading) return <LoadingView />;
 
   return (
-    <View style={styles.container}>
-      <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.md }]}>
+    <Box style={{ flex: 1 }} background="white" padding="md">
+      <Text variant="body" color="textSecondary" style={{ marginBottom: spacing.md }}>
         Hangi departmandan talep edeceksiniz?
       </Text>
-      {departments.map((dep) => (
-        <TouchableOpacity
-          key={dep.id}
-          style={styles.option}
-          onPress={() => navigation.navigate('QRScan', { departmentId: dep.id })}
-        >
-          <Text style={[typography.body, { color: colors.textPrimary, fontWeight: '600' }]}>{dep.name}</Text>
-        </TouchableOpacity>
-      ))}
-    </View>
+      <ScrollView>
+        {departments.map((dep) => (
+          <Pressable
+            key={dep.id}
+            onPress={() => navigation.navigate('QRScan', { departmentId: dep.id })}
+            background="surface"
+            radius="md"
+            style={{
+              width: '100%',
+              marginBottom: spacing.sm,
+              paddingHorizontal: spacing.md,
+              justifyContent: 'flex-start',
+            }}
+            accessibilityLabel={dep.name}
+          >
+            <Text variant="bodyBold">{dep.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white, padding: spacing.md },
-  option: {
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
-    borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm,
-  },
-});

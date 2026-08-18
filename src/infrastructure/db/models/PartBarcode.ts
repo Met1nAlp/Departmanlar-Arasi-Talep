@@ -6,9 +6,9 @@ import { field } from '@nozbe/watermelondb/decorators';
 export default class PartBarcode extends Model {
   static table = 'part_barcodes';
 
-  @field('part_id') partId!: string;
-  @field('symbology') symbology!: string;
-  @field('raw_value') rawValue!: string;
+  @field('part_id') partId: string;
+  @field('symbology') symbology: string;
+  @field('raw_value') rawValue: string;
   @field('parsed_gtin') parsedGtin?: string;
-  @field('is_primary') isPrimary!: boolean;
+  @field('is_primary') isPrimary: boolean;
 }

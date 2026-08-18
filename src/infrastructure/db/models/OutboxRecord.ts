@@ -22,13 +22,13 @@ function sanitizeLastError(raw: unknown): { code: string; message: string } | nu
 export default class OutboxRecord extends Model {
   static table = 'outbox';
 
-  @field('client_request_id') clientRequestId!: string; // = OutboxEntry.id (idempotency anahtarı)
-  @field('operation') operation!: OutboxOperation;
+  @field('client_request_id') clientRequestId: string; // = OutboxEntry.id (idempotency anahtarı)
+  @field('operation') operation: OutboxOperation;
   @field('target_id') targetId?: string;
-  @json('payload_json', sanitizePayload) payload!: unknown;
-  @field('attempts') attempts!: number;
-  @field('next_attempt_at') nextAttemptAt!: number;
-  @field('created_at') createdAt!: number;
-  @field('status') status!: OutboxStatus;
-  @json('last_error_json', sanitizeLastError) lastError!: { code: string; message: string } | null;
+  @json('payload_json', sanitizePayload) payload: unknown;
+  @field('attempts') attempts: number;
+  @field('next_attempt_at') nextAttemptAt: number;
+  @field('created_at') createdAt: number;
+  @field('status') status: OutboxStatus;
+  @json('last_error_json', sanitizeLastError) lastError: { code: string; message: string } | null;
 }

@@ -17,17 +17,17 @@ export default class RequestCache extends Model {
 
   @field('server_id') serverId?: string;
   @field('request_no') requestNo?: string;
-  @field('requester_user_id') requesterUserId!: string;
-  @field('requester_dept_id') requesterDeptId!: string;
-  @field('supplier_dept_id') supplierDeptId!: string;
-  @field('state') state!: string;
-  @field('priority') priority!: string;
+  @field('requester_user_id') requesterUserId: string;
+  @field('requester_dept_id') requesterDeptId: string;
+  @field('supplier_dept_id') supplierDeptId: string;
+  @field('state') state: string;
+  @field('priority') priority: string;
   @field('delivery_location_id') deliveryLocationId?: string;
-  @json('lines_json', sanitizeLines) lines!: RequestLine[];
-  @field('created_at_iso') createdAtIso!: string;
+  @json('lines_json', sanitizeLines) lines: RequestLine[];
+  @field('created_at_iso') createdAtIso: string;
   @field('sla_due_at_iso') slaDueAtIso?: string;
   @field('closed_at_iso') closedAtIso?: string;
-  @field('client_request_id') clientRequestId!: string;
+  @field('client_request_id') clientRequestId: string;
   @field('note') note?: string;
   @field('transport_order_id') transportOrderId?: string;
 }

@@ -1,22 +1,26 @@
 // src/screens/saha-personeli/QRScanScreen.tsx
-import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
+import { Box } from '../../design-system/primitives/Box';
+import { Text } from '../../design-system/primitives/Text';
+import { Button } from '../../design-system/components/Button';
+import { NumericKeypad } from '../../design-system/components/NumericKeypad';
+import { ScanTarget } from '../../design-system/components/ScanTarget';
+import { spacing } from '../../design-system/tokens';
 import { getProductByQrCode } from '../../api/products';
 import { createRequest } from '../../api/requests';
 import { useActiveUser } from '../../store/authStore';
 import { Product } from '../../types';
 import { parseGs1Barcode } from '../../domain/barcode/gs1Parser';
 
+const SUPPORTED_BARCODE_TYPES = ['qr', 'ean13', 'ean8', 'upc_a', 'code128'] as const;
+
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'QRScan'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'QRScan'>;
-
-// Sadece kendi ürettiğimiz QR değil, ürün üzerindeki fabrika barkodlarını da (EAN/UPC/Code128) okuyabilelim
-const SUPPORTED_BARCODE_TYPES = ['qr', 'ean13', 'ean8', 'upc_a', 'code128'] as const;
 
 export default function QRScanScreen() {
   const navigation = useNavigation<Nav>();
@@ -24,10 +28,12 @@ export default function QRScanScreen() {
   const user = useActiveUser();
 
   const [permission, requestPermission] = useCameraPermissions();
-  const [scanned, setScanned] = useState(false);
-  const [product, setProduct] = useState<Product | null>(null);
+  // Eğer ProductSearchScreen'den bir ürünle geldiysek, "scanned" durumundan başlıyoruz —
+  // kamera adımı tamamen atlanıyor.
+  const [scanned, setScanned] = useState(!!route.params.preselectedProduct);
+  const [product, setProduct] = useState<Product | null>(route.params.preselectedProduct ?? null);
   const [notFound, setNotFound] = useState(false);
-  const [quantity, setQuantity] = useState('1');
+  const [quantity, setQuantity] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
@@ -45,21 +51,19 @@ export default function QRScanScreen() {
     const lookupCode = gs1?.gtin ?? data;
 
     const result = await getProductByQrCode(lookupCode);
-    if (result) {
-      setProduct(result);
-    } else {
-      setNotFound(true);
-    }
+    if (result) setProduct(result);
+    else setNotFound(true);
   };
 
   const handleRescan = () => {
     setScanned(false);
     setProduct(null);
     setNotFound(false);
+    setQuantity('');
   };
 
   const handleSubmit = async () => {
-    if (!product || !user) return;
+    if (!product || !user || quantity === '' || Number(quantity) <= 0) return;
     setSubmitting(true);
     const newRequest = await createRequest({
       departmentId: route.params.departmentId,
@@ -71,110 +75,73 @@ export default function QRScanScreen() {
     navigation.navigate('RequestCreated', { requestId: newRequest.id });
   };
 
-  if (!permission) {
-    return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={colors.blue} />
-      </View>
-    );
-  }
+  if (!permission) return null;
 
   if (!permission.granted) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <Text style={[typography.body, { color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.md }]}>
-          QR/barkod okutmak için kamera izni gerekiyor
-        </Text>
-        <TouchableOpacity style={styles.scanButton} onPress={requestPermission}>
-          <Text style={{ color: colors.white, fontWeight: '600' }}>İzin Ver</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  // Sonuç ekranı (taramadan sonra) — kamera olmadığı için burada overflow/rounded kullanmak güvenli
-  if (scanned) {
-    return (
-      <View style={styles.container}>
-        <View style={[styles.cameraWrapper, styles.resultOverlay]}>
-          {notFound ? (
-            <>
-              <Text style={[typography.body, { color: colors.white, textAlign: 'center' }]}>
-                Bu koda kayıtlı bir ürün bulunamadı
-              </Text>
-              <TouchableOpacity style={styles.scanButton} onPress={handleRescan}>
-                <Text style={{ color: colors.white, fontWeight: '600' }}>Tekrar Okut</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <Text style={[typography.body, { color: colors.white, textAlign: 'center' }]}>
-              Okunan ürün: {product?.name}
-            </Text>
-          )}
+      <Box style={{ flex: 1 }} background="white" padding="lg">
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text variant="body" color="textPrimary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
+            QR/barkod okutmak için kamera izni gerekiyor
+          </Text>
+          <Button label="İzin Ver" onPress={requestPermission} fullWidth={false} style={{ paddingHorizontal: spacing.xl }} />
         </View>
+      </Box>
+    );
+  }
 
-        {product && !notFound && (
-          <View style={{ marginTop: spacing.lg }}>
-            <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.xs }]}>Adet</Text>
-            <TextInput
-              testID="qr-quantity-input"
-              style={styles.input}
-              value={quantity}
-              onChangeText={setQuantity}
-              keyboardType="number-pad"
-            />
-            <TouchableOpacity testID="qr-submit-request" style={styles.submitButton} onPress={handleSubmit} disabled={submitting}>
-              {submitting ? <ActivityIndicator color={colors.white} /> : (
-                <Text style={{ color: colors.white, fontWeight: '600' }}>Talebi Oluştur</Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRescan} style={{ marginTop: spacing.sm, alignItems: 'center' }}>
-              <Text style={[typography.caption, { color: colors.blue }]}>Farklı bir ürün okut</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+  if (!scanned) {
+    return (
+      <View style={{ flex: 1 }}>
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: [...SUPPORTED_BARCODE_TYPES] }}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
+        <ScanTarget instruction="Ürünün kodunu kadraja alın" onBack={() => navigation.goBack()} />
       </View>
     );
   }
 
-  // Tarama ekranı — köşesiz, tam ekran (overflow/borderRadius YOK — siyah ekran sorununu önlemek için)
   return (
-    <CameraView
-      style={{ flex: 1 }}
-      facing="back"
-      barcodeScannerSettings={{ barcodeTypes: [...SUPPORTED_BARCODE_TYPES] }}
-      onBarcodeScanned={handleBarcodeScanned}
-    />
+    <Box style={{ flex: 1 }} background="white" padding="lg">
+      {notFound ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text variant="body" color="textPrimary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
+            Bu koda kayıtlı bir ürün bulunamadı
+          </Text>
+          <Button label="Tekrar Okut" onPress={handleRescan} fullWidth={false} style={{ paddingHorizontal: spacing.xl }} />
+        </View>
+      ) : (
+        <>
+          <Text variant="h2" style={{ marginBottom: spacing.xs }}>
+            {product?.name}
+          </Text>
+          <Text variant="body" color="textSecondary" style={{ marginBottom: spacing.lg }}>
+            Adet
+          </Text>
+          <Text variant="h1" color="blue" style={{ textAlign: 'center', marginBottom: spacing.lg, minHeight: 40 }}>
+            {quantity || '0'}
+          </Text>
+          <NumericKeypad value={quantity} onChange={setQuantity} maxLength={4} />
+          <Box style={{ marginTop: spacing.lg }}>
+            <Button
+              testID="qr-submit-request"
+              label="Talebi Oluştur"
+              onPress={handleSubmit}
+              loading={submitting}
+              disabled={quantity === '' || Number(quantity) <= 0}
+            />
+            <Button
+              label={route.params.preselectedProduct ? 'Farklı Ürün Seç' : 'Farklı Ürün Okut'}
+              onPress={route.params.preselectedProduct ? () => navigation.goBack() : handleRescan}
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+            />
+          </Box>
+        </>
+      )}
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white, padding: spacing.md },
-  centered: { justifyContent: 'center', alignItems: 'center' },
-  cameraWrapper: {
-    height: 300,
-    borderRadius: radius.md,
-    overflow: 'hidden', // burada sorun yok çünkü artık canlı kamera değil, sadece sonuç metni gösteriyor
-    backgroundColor: colors.black,
-  },
-  resultOverlay: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  scanButton: {
-    marginTop: spacing.md,
-    backgroundColor: colors.blue,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-  },
-  input: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md,
-    padding: spacing.md, fontSize: 16, color: colors.textPrimary,
-  },
-  submitButton: {
-    marginTop: spacing.md, backgroundColor: colors.blue, padding: spacing.md,
-    borderRadius: radius.md, alignItems: 'center',
-  },
-});

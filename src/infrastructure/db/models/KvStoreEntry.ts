@@ -9,6 +9,6 @@ import { field } from '@nozbe/watermelondb/decorators';
 export default class KvStoreEntry extends Model {
   static table = 'kv_store';
 
-  @field('key') key!: string;
-  @field('value') value!: string;
+  @field('key') key: string;
+  @field('value') value: string;
 }

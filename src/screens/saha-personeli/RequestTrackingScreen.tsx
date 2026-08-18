@@ -1,14 +1,16 @@
 // src/screens/saha-personeli/RequestTrackingScreen.tsx
 import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator} from 'react-native';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Request } from '../../types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
+import { colors, typography, radius } from '../../constants/theme';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
 import { getRequestById } from '../../api/requests';
 import { useRequestUpdates } from '../../hooks/useRequestUpdates';
+import { Button } from '../../design-system/components/Button';
+import { spacing } from '../../design-system/tokens';
 import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 
@@ -27,7 +29,6 @@ export default function RequestTrackingScreen() {
     });
   }, [route.params.requestId]);
 
-  // YENİ: departman durumu değiştirdiği anda bu ekran otomatik güncellenir
   useRequestUpdates(setRequest, route.params.requestId);
 
   if (!request) {
@@ -39,6 +40,9 @@ export default function RequestTrackingScreen() {
   }
 
   const currentIndex = statusOrder.indexOf(request.status);
+  // RBAC: "teslim aldım" yalnızca talebi açan tarafın kapatabileceği bir eylem
+  // (Plan Bölüm 6.3 → RequestPolicies.canClose, legacyAdapter üzerinden).
+  const allowedToConfirm = user ? canConfirmDelivery(user.role) : false;
 
   return (
     <View style={styles.container}>
@@ -54,7 +58,7 @@ export default function RequestTrackingScreen() {
         );
       })}
 
-      {request.status === 'YOLDA' && user && canConfirmDelivery(user.role) && (
+      {request.status === 'YOLDA' && allowedToConfirm && (
         <TouchableOpacity
           style={styles.confirmButton}
           onPress={() => navigation.navigate('DeliveryConfirm', { requestId: request.id })}
@@ -62,6 +66,15 @@ export default function RequestTrackingScreen() {
           <Text style={{ color: colors.white, fontWeight: '600' }}>Ürünü Teslim Aldım</Text>
         </TouchableOpacity>
       )}
+      {request.status !== 'TESLIM_EDILDI' && (
+      <Button
+        label="Talebi İptal Et"
+        onPress={() => navigation.navigate('CancelRequest', { requestId: request.id })}
+        variant="danger"
+        style={{ marginTop: spacing.sm }}
+      />
+)}
+      
     </View>
   );
 }

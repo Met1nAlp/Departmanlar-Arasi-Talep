@@ -13,13 +13,13 @@ function sanitizePayload(raw: unknown): Record<string, unknown> | null {
 export default class EventLogLocal extends Model {
   static table = 'event_log_local';
 
-  @field('seq') seq!: number;
-  @field('request_id') requestId!: string;
-  @field('event_type') eventType!: string;
+  @field('seq') seq: number;
+  @field('request_id') requestId: string;
+  @field('event_type') eventType: string;
   @field('from_state') fromState?: string;
-  @field('to_state') toState!: string;
+  @field('to_state') toState: string;
   @field('actor_user_id') actorUserId?: string;
   @field('device_id') deviceId?: string;
-  @json('payload_json', sanitizePayload) payload!: Record<string, unknown> | null;
-  @field('occurred_at_iso') occurredAtIso!: string;
+  @json('payload_json', sanitizePayload) payload: Record<string, unknown> | null;
+  @field('occurred_at_iso') occurredAtIso: string;
 }

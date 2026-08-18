@@ -1,7 +1,11 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+// src/components/RequestCard.tsx
 import { Request } from '../types';
-import { colors, spacing, radius, typography } from '../constants/theme';
+import { Box } from '../design-system/primitives/Box';
+import { Stack } from '../design-system/primitives/Stack';
+import { Text } from '../design-system/primitives/Text';
+import { Pressable } from '../design-system/primitives/Pressable';
 import StatusBadge from './StatusBadge';
+import { spacing } from '../design-system/tokens';
 
 interface Props {
   request: Request;
@@ -11,30 +15,16 @@ interface Props {
 
 export default function RequestCard({ request, productName, onPress }: Props) {
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.row}>
-        <Text style={[typography.body, { fontWeight: '600', color: colors.textPrimary }]}>{productName}</Text>
-        <StatusBadge status={request.status} />
-      </View>
-      <Text style={[typography.caption, { color: colors.textSecondary, marginTop: spacing.xs }]}>
-        Adet: {request.quantity}
-      </Text>
-    </TouchableOpacity>
+    <Pressable onPress={onPress} style={{ width: '100%', minHeight: undefined }}>
+      <Box padding="md" background="surface" radius="md" border style={{ width: '100%' }}>
+        <Stack direction="row" justify="space-between" align="center">
+          <Text variant="bodyBold">{productName}</Text>
+          <StatusBadge status={request.status} />
+        </Stack>
+        <Text variant="caption" color="textSecondary" style={{ marginTop: spacing.xs }}>
+          Adet: {request.quantity}
+        </Text>
+      </Box>
+    </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-});

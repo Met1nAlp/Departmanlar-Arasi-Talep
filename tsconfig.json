@@ -5,6 +5,7 @@
     // WatermelonDB modelleri (@field, @json, @date) legacy decorator API'sini
     // kullanır — bkz. babel.config.js dosya başı notu (E3, Plan Bölüm 10.3).
     "experimentalDecorators": true,
-    "useDefineForClassFields": false
+    "useDefineForClassFields": false,
+    "strictPropertyInitialization": false
   }
 }

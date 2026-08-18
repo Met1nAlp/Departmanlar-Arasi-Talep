@@ -1,10 +1,12 @@
 // src/screens/saha-personeli/DeliveryConfirmScreen.tsx
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
-import { colors, spacing, typography, radius } from '../../constants/theme';
+import { Box } from '../../design-system/primitives/Box';
+import { Text } from '../../design-system/primitives/Text';
+import { Button } from '../../design-system/components/Button';
+import { spacing } from '../../design-system/tokens';
 import { updateRequestStatus } from '../../api/requests';
 import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
@@ -32,23 +34,21 @@ export default function DeliveryConfirmScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={[typography.h2, { color: colors.textPrimary, textAlign: 'center' }]}>
+    <Box style={{ flex: 1, justifyContent: 'center' }} background="white" padding="lg">
+      <Text variant="h2" style={{ textAlign: 'center' }}>
         Ürünü teslim aldığınızı onaylıyor musunuz?
       </Text>
-      <Text style={[typography.body, { color: colors.textSecondary, marginTop: spacing.sm, textAlign: 'center' }]}>
+      <Text variant="body" color="textSecondary" style={{ textAlign: 'center', marginTop: spacing.sm }}>
         Onayladığınızda ilgili departmana "Ürün İletildi" bildirimi gönderilecek.
       </Text>
-      <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm} disabled={confirming || !allowed}>
-        {confirming ? <ActivityIndicator color={colors.white} /> : (
-          <Text style={{ color: colors.white, fontWeight: '600' }}>Evet, Teslim Aldım</Text>
-        )}
-      </TouchableOpacity>
-    </View>
+      <Box style={{ marginTop: spacing.xl }}>
+        <Button
+          label="Evet, Teslim Aldım"
+          onPress={handleConfirm}
+          loading={confirming}
+          disabled={!allowed}
+        />
+      </Box>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white, justifyContent: 'center', padding: spacing.lg },
-  confirmButton: { marginTop: spacing.xl, backgroundColor: colors.blue, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
-});
