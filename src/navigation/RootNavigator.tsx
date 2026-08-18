@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { colors } from '../constants/theme';
 import ConnectionBanner from '../components/ConnectionBanner';
 import { connectRealtime, disconnectRealtime } from '../infrastructure/realtime/instance';
+import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 
 import AuthNavigator from './AuthNavigator';
 import SahaPersoneliNavigator from './SahaPersoneliNavigator';
@@ -36,6 +37,11 @@ export default function RootNavigator() {
     }
     return () => disconnectRealtime();
   }, [activeSession]);
+
+  useEffect(() => {
+    // Plan §12.4 kural 5: "Uygulama açılışında outbox otomatik işlenir."
+    void outboxWorker.processQueue().then(refreshPendingSyncBadge);
+  }, []);
 
   if (isLoading) {
     return (
