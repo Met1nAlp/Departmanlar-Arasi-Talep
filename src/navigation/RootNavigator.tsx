@@ -6,6 +6,8 @@ import { colors } from '../constants/theme';
 import ConnectionBanner from '../components/ConnectionBanner';
 import { connectRealtime, disconnectRealtime } from '../infrastructure/realtime/instance';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
+import { syncCatalog } from '../infrastructure/sync/CatalogSync';
+import { database } from '../infrastructure/db';
 
 import AuthNavigator from './AuthNavigator';
 import SahaPersoneliNavigator from './SahaPersoneliNavigator';
@@ -41,6 +43,8 @@ export default function RootNavigator() {
   useEffect(() => {
     // Plan §12.4 kural 5: "Uygulama açılışında outbox otomatik işlenir."
     void outboxWorker.processQueue().then(refreshPendingSyncBadge);
+    // Plan §10.3: katalog cihazda tam olarak önbelleklenir, delta senkron ile güncellenir.
+    void syncCatalog(database);
   }, []);
 
   if (isLoading) {
