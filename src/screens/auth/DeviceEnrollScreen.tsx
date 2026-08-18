@@ -11,15 +11,20 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { useDeviceStore } from '../../store/deviceStore';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { AuthError } from '../../api/auth';
+import { useTranslation } from '../../i18n';
 
-const enrollSchema = z.object({
-  enrollCode: z.string().min(1, 'Kayıt kodu gerekli'),
-});
+type EnrollFormValues = z.infer<ReturnType<typeof buildEnrollSchema>>;
 
-type EnrollFormValues = z.infer<typeof enrollSchema>;
+function buildEnrollSchema(t: ReturnType<typeof useTranslation>['t']) {
+  return z.object({
+    enrollCode: z.string().min(1, t('auth.deviceEnroll.codeRequired')),
+  });
+}
 
 export default function DeviceEnrollScreen() {
   const enroll = useDeviceStore((s) => s.enroll);
+  const { t } = useTranslation();
+  const enrollSchema = buildEnrollSchema(t);
   const {
     control,
     handleSubmit,
@@ -34,7 +39,7 @@ export default function DeviceEnrollScreen() {
     try {
       await enroll(values.enrollCode);
     } catch (err) {
-      const message = err instanceof AuthError ? err.message : 'Cihaz kaydı başarısız. Tekrar deneyin.';
+      const message = err instanceof AuthError ? err.message : t('auth.deviceEnroll.errorGeneric');
       setError('enrollCode', { message });
     }
   };
@@ -42,10 +47,10 @@ export default function DeviceEnrollScreen() {
   return (
     <View style={styles.container}>
       <Text style={[typography.h1, { color: colors.blue, marginBottom: spacing.xl }]}>
-        Cihaz Kaydı
+        {t('auth.deviceEnroll.title')}
       </Text>
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.lg }]}>
-        Bu cihaz henüz kayıtlı değil. Sistem yöneticinizden aldığınız kayıt kodunu girin.
+        {t('auth.deviceEnroll.subtitle')}
       </Text>
 
       <Controller
@@ -54,7 +59,7 @@ export default function DeviceEnrollScreen() {
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
             style={styles.input}
-            placeholder="Kayıt kodu"
+            placeholder={t('auth.deviceEnroll.codePlaceholder')}
             placeholderTextColor={colors.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
@@ -74,7 +79,7 @@ export default function DeviceEnrollScreen() {
         {isSubmitting ? (
           <ActivityIndicator color={colors.white} />
         ) : (
-          <Text style={[typography.body, { color: colors.white, fontWeight: '600' }]}>Cihazı Kaydet</Text>
+          <Text style={[typography.body, { color: colors.white, fontWeight: '600' }]}>{t('auth.deviceEnroll.submit')}</Text>
         )}
       </TouchableOpacity>
     </View>

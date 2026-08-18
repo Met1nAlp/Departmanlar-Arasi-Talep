@@ -11,16 +11,21 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator 
 import { useAuthStore } from '../../store/authStore';
 import { colors, spacing, typography, radius } from '../../constants/theme';
 import { AuthError } from '../../api/auth';
+import { useTranslation } from '../../i18n';
 
-const loginSchema = z.object({
-  username: z.string().min(1, 'Kullanıcı adı gerekli'),
-  password: z.string().min(1, 'Şifre gerekli'),
-});
+type LoginFormValues = z.infer<ReturnType<typeof buildLoginSchema>>;
 
-type LoginFormValues = z.infer<typeof loginSchema>;
+function buildLoginSchema(t: ReturnType<typeof useTranslation>['t']) {
+  return z.object({
+    username: z.string().min(1, t('auth.login.usernameRequired')),
+    password: z.string().min(1, t('auth.login.passwordRequired')),
+  });
+}
 
 export default function LoginScreen() {
   const loginSupervisor = useAuthStore((s) => s.loginSupervisor);
+  const { t } = useTranslation();
+  const loginSchema = buildLoginSchema(t);
   const {
     control,
     handleSubmit,
@@ -35,7 +40,7 @@ export default function LoginScreen() {
     try {
       await loginSupervisor(values.username, values.password);
     } catch (err) {
-      const message = err instanceof AuthError ? err.message : 'Giriş yapılamadı. Tekrar deneyin.';
+      const message = err instanceof AuthError ? err.message : t('auth.login.errorGeneric');
       setError('password', { message });
     }
   };
@@ -43,10 +48,10 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Text style={[typography.h1, { color: colors.blue, marginBottom: spacing.xl }]}>
-        Talep Uygulaması
+        {t('auth.login.title')}
       </Text>
       <Text style={[typography.body, { color: colors.textSecondary, marginBottom: spacing.lg }]}>
-        Yetkili girişi
+        {t('auth.login.subtitle')}
       </Text>
 
       <Controller
@@ -55,7 +60,7 @@ export default function LoginScreen() {
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
             style={styles.input}
-            placeholder="Kullanıcı adı"
+            placeholder={t('auth.login.usernamePlaceholder')}
             placeholderTextColor={colors.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -73,7 +78,7 @@ export default function LoginScreen() {
         render={({ field: { value, onChange, onBlur } }) => (
           <TextInput
             style={styles.input}
-            placeholder="Şifre"
+            placeholder={t('auth.login.passwordPlaceholder')}
             placeholderTextColor={colors.textMuted}
             secureTextEntry
             value={value}
@@ -92,7 +97,7 @@ export default function LoginScreen() {
         {isSubmitting ? (
           <ActivityIndicator color={colors.white} />
         ) : (
-          <Text style={[typography.body, { color: colors.white, fontWeight: '600' }]}>Giriş Yap</Text>
+          <Text style={[typography.body, { color: colors.white, fontWeight: '600' }]}>{t('auth.login.submit')}</Text>
         )}
       </TouchableOpacity>
     </View>
