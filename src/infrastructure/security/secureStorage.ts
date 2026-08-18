@@ -16,6 +16,13 @@ export const SECURE_STORAGE_KEYS = {
   refreshToken: 'mts.auth.refreshToken',
   tokenExpiresAt: 'mts.auth.tokenExpiresAt',
   supervisorUser: 'mts.auth.supervisorUser',
+  // Plan Bölüm 14.2 adım 1 "Cihaz kaydı (bir kez, kurulumda)" — bu anahtarlar
+  // yetkili/personel oturumlarından bağımsızdır, cihaz fabrika ayarlarına
+  // dönmeden silinmez (bkz. store/deviceStore.ts).
+  deviceUid: 'mts.device.uid',
+  deviceToken: 'mts.device.token',
+  deviceDepartmentId: 'mts.device.departmentId',
+  deviceMode: 'mts.device.mode',
 } as const;
 
 export type SecureStorageKey = (typeof SECURE_STORAGE_KEYS)[keyof typeof SECURE_STORAGE_KEYS];
@@ -32,7 +39,28 @@ export async function deleteSecureItem(key: SecureStorageKey): Promise<void> {
   await SecureStore.deleteItemAsync(key);
 }
 
+/** Yalnızca yetkili/personel oturum anahtarları — device* KASITLI OLARAK hariç
+ * (bkz. yukarıdaki not: cihaz kaydı, yetkili çıkışında silinmemeli). */
+const AUTH_ONLY_KEYS: SecureStorageKey[] = [
+  SECURE_STORAGE_KEYS.accessToken,
+  SECURE_STORAGE_KEYS.refreshToken,
+  SECURE_STORAGE_KEYS.tokenExpiresAt,
+  SECURE_STORAGE_KEYS.supervisorUser,
+];
+
 /** Oturum kapatmada (Plan Bölüm 14.2, adım 4) tüm auth anahtarlarını tek seferde temizler. */
 export async function clearAuthSecureStorage(): Promise<void> {
-  await Promise.all(Object.values(SECURE_STORAGE_KEYS).map((key) => deleteSecureItem(key)));
+  await Promise.all(AUTH_ONLY_KEYS.map((key) => deleteSecureItem(key)));
+}
+
+/** Yalnızca BT/admin'in "cihazı fabrika ayarlarına döndür" akışında kullanılmalı. */
+export async function clearDeviceSecureStorage(): Promise<void> {
+  await Promise.all(
+    [
+      SECURE_STORAGE_KEYS.deviceUid,
+      SECURE_STORAGE_KEYS.deviceToken,
+      SECURE_STORAGE_KEYS.deviceDepartmentId,
+      SECURE_STORAGE_KEYS.deviceMode,
+    ].map((key) => deleteSecureItem(key)),
+  );
 }

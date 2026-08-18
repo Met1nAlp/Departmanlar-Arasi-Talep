@@ -8,7 +8,9 @@
 // KALACAK şekilde tasarlandı — authStore ve ekranlar bu değişimi hissetmez.
 
 import { User } from '../types';
+import type { Device } from '../contracts/types';
 import { mockSupervisors, mockStaffMembers } from '../mocks/users';
+import { mockDeviceEnrollCodes } from '../mocks/deviceEnrollCodes';
 import { delay } from './delay';
 import {
   issueMockToken,
@@ -17,10 +19,33 @@ import {
 } from '../infrastructure/security/tokenService';
 
 export class AuthError extends Error {
-  constructor(public code: 'INVALID_CREDENTIALS' | 'INVALID_PIN' | 'UNKNOWN_USER', message: string) {
+  constructor(
+    public code: 'INVALID_CREDENTIALS' | 'INVALID_PIN' | 'UNKNOWN_USER' | 'INVALID_ENROLL_CODE',
+    message: string,
+  ) {
     super(message);
     this.name = 'AuthError';
   }
+}
+
+export interface DeviceEnrollResult {
+  deviceToken: string;
+  departmentId: string;
+  mode: Device['mode'];
+}
+
+/** Backend sözleşmesi: POST /auth/device/enroll body: { deviceUid, enrollCode } (Plan Bölüm 14.2 adım 1). */
+export async function enrollDevice(deviceUid: string, enrollCode: string): Promise<DeviceEnrollResult> {
+  await delay();
+  const match = mockDeviceEnrollCodes.find((c) => c.code.toUpperCase() === enrollCode.trim().toUpperCase());
+  if (!match) {
+    throw new AuthError('INVALID_ENROLL_CODE', 'Kayıt kodu geçersiz. Sistem yöneticinize danışın.');
+  }
+  // Plan Bölüm 14.3: refresh token gibi cihaza bağlı (device-bound) — TTL yok
+  // (cihaz kaydı BT tarafından uzaktan iptal edilene kadar geçerli, bkz. Plan
+  // §18.2 "Uzaktan kilit/silme"). Mock'ta pratik bir üst sınır olarak 1 yıl kullanıldı.
+  const deviceToken = issueMockToken({ sub: deviceUid, role: 'DEVICE' }, 365 * 24 * 60 * 60);
+  return { deviceToken, departmentId: match.departmentId, mode: match.mode };
 }
 
 export interface LoginResult {

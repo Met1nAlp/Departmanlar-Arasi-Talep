@@ -1,4 +1,5 @@
 export type AuthStackParamList = {
+  DeviceEnroll: undefined;
   Login: undefined;
   PinSession: undefined;
 };
