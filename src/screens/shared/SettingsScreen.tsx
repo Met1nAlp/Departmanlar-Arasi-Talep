@@ -50,15 +50,41 @@ export default function SettingsScreen() {
     await logoutSupervisor();
   };
 
-  return (
-    <Box style={{ flex: 1 }} background="white" padding="lg">
-      <Text variant="h2" style={{ marginBottom: spacing.lg }}>
-        Ayarlar
-      </Text>
+  const initials = (user?.name ?? '?')
+    .split(' ')
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 
-      <Stack gap="md">
-        <InfoRow label="Kullanıcı" value={user?.name ?? '—'} />
-        <InfoRow label="Rol" value={user ? roleLabels[user.role] : '—'} />
+  return (
+    <Box style={{ flex: 1 }} background="white">
+      {/* Profil banner — mockup'taki avatar + isim/rol kartı */}
+      <Box background="blue" padding="lg" style={{ paddingTop: spacing.xl, alignItems: 'flex-start' }}>
+        <Box
+          background="white"
+          radius="lg"
+          style={{
+            width: 56,
+            height: 56,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: spacing.sm,
+          }}
+        >
+          <Text variant="h2" color="blue">
+            {initials}
+          </Text>
+        </Box>
+        <Text variant="h2" color="white">
+          {user?.name ?? '—'}
+        </Text>
+        <Text variant="caption" color="blueLight" style={{ marginTop: 2 }}>
+          {user ? roleLabels[user.role] : '—'}
+        </Text>
+      </Box>
+
+      <Stack gap="md" style={{ padding: spacing.lg }}>
         <InfoRow label="Vardiya Amiri" value={supervisor?.name ?? '—'} />
         <InfoRow label="Uygulama Sürümü" value={appVersion} />
         <InfoRow label="Cihaz" value={Constants.deviceName ?? 'bilinmiyor'} />
@@ -66,18 +92,20 @@ export default function SettingsScreen() {
 
       <View style={{ flex: 1 }} />
 
-      <Button
-        label="Oturumu Kapat"
-        onPress={() => setConfirmVisible(true)}
-        variant="danger"
-      />
+      <Box style={{ padding: spacing.lg, paddingTop: 0 }}>
+        <Button
+          label="Oturumu Kapat"
+          onPress={() => setConfirmVisible(true)}
+          variant="danger"
+        />
 
-      <Button
-        label="Vardiyayı Bitir"
-        onPress={() => setShiftEndVisible(true)}
-        variant="secondary"
-        style={{ marginTop: spacing.sm }}
-      />
+        <Button
+          label="Vardiyayı Bitir"
+          onPress={() => setShiftEndVisible(true)}
+          variant="secondary"
+          style={{ marginTop: spacing.sm }}
+        />
+      </Box>
 
       <ConfirmSheet
         visible={confirmVisible}
