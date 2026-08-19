@@ -1,0 +1,5 @@
+*.user*
+*.stash
+.qmake.stash
+*.db
+*.sqlite
