@@ -9,6 +9,7 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { spacing, colors } from '../../design-system/tokens';
+import { Ionicons } from '@expo/vector-icons';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'PrioritySelect'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'PrioritySelect'>;
@@ -41,22 +42,29 @@ export default function PrioritySelectScreen() {
             <Pressable
               key={opt.value}
               onPress={() => setSelected(opt.value)}
-              background="surface"
+              background={isSelected ? 'blueLight' : 'surface'}
               radius="md"
               style={{
                 width: '100%',
                 paddingHorizontal: spacing.md,
-                justifyContent: 'flex-start',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 borderWidth: isSelected ? 2 : 0,
                 borderColor: colors.blue,
               }}
             >
-              <Stack gap="xs" style={{ width: '100%' }}>
+              <Stack gap="xs" style={{ flex: 1 }}>
                 <PriorityBadge priority={opt.value} />
                 <Text variant="caption" color="textSecondary">
                   {opt.description}
                 </Text>
               </Stack>
+              <Ionicons
+                name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+                color={isSelected ? colors.blue : colors.border}
+              />
             </Pressable>
           );
         })}

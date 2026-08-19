@@ -10,6 +10,7 @@ import { Button } from '../../design-system/components/Button';
 import { TextField } from '../../design-system/components/TextField';
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
 import { spacing, colors } from '../../design-system/tokens';
+import { Ionicons } from '@expo/vector-icons';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'CancelRequest'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'CancelRequest'>;
@@ -61,17 +62,24 @@ export default function CancelRequestScreen() {
             <Pressable
               key={reason}
               onPress={() => setSelectedReason(reason)}
-              background="surface"
+              background={isSelected ? 'blueLight' : 'surface'}
               radius="md"
               style={{
                 width: '100%',
                 paddingHorizontal: spacing.md,
-                justifyContent: 'flex-start',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
                 borderWidth: isSelected ? 2 : 0,
                 borderColor: colors.blue,
               }}
             >
               <Text variant="body">{reason}</Text>
+              <Ionicons
+                name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                size={22}
+                color={isSelected ? colors.blue : colors.border}
+              />
             </Pressable>
           );
         })}

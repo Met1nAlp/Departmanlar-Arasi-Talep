@@ -67,17 +67,19 @@ export default function MaterialRequestCartScreen() {
             <Pressable
               key={dep.id}
               onPress={() => setSelectedDept(dep)}
-              background="surface"
+              background={isSelected ? 'blue' : 'surface'}
               radius="md"
               style={{
                 paddingHorizontal: spacing.md,
                 minWidth: undefined,
                 minHeight: 44,
-                borderWidth: isSelected ? 2 : 0,
-                borderColor: colors.blue,
+                borderWidth: isSelected ? 0 : 1,
+                borderColor: colors.border,
               }}
             >
-              <Text variant="body">{dep.name}</Text>
+              <Text variant="body" color={isSelected ? 'white' : 'textPrimary'}>
+                {dep.name}
+              </Text>
             </Pressable>
           );
         })}
