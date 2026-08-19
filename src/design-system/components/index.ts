@@ -8,6 +8,7 @@ export * from './ConfirmSheet';
 export * from './ScanTarget';
 export * from './PriorityBadge';
 export * from './SlaTimer';
+export * from './SlaStrip';
 export * from './RequestStatusStrip';
 export * from './LoadingView';
 export * from './ErrorView';

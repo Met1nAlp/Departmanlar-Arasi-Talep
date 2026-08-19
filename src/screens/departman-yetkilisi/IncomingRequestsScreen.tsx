@@ -11,6 +11,7 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { StatusChip } from '../../design-system/components/StatusChip';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { SlaTimer } from '../../design-system/components/SlaTimer';
+import { SlaStrip } from '../../design-system/components/SlaStrip';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { LoadingView } from '../../design-system/components/LoadingView';
 import { colors, spacing } from '../../design-system/tokens';
@@ -18,6 +19,7 @@ import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useActiveUser } from '../../store/authStore';
 import { Ionicons } from '@expo/vector-icons';
+import { slaProgress, isNearSla, isSlaBreached } from '../../domain/request/SlaPolicy';
 
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'IncomingRequests'>;
 
@@ -84,26 +86,40 @@ useEffect(() => {
         data={sortedRequests}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-            background="surface"
-            radius="md"
-            style={{ width: '100%', marginBottom: spacing.sm, padding: spacing.md, alignItems: 'flex-start' }}
-          >
-            <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
-              <Text variant="bodyBold">{products[item.productId]}</Text>
-              <StatusChip status={item.status} />
-            </Stack>
-            <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
-              {/* GEÇİCİ: gerçek priority alanı gelince item.priority olacak */}
-              <PriorityBadge priority="NORMAL" />
-              {/* GEÇİCİ: gerçek slaDueAt alanı gelince item.slaDueAt olacak.
-                  Şimdilik oluşturulma anından 30 dk sonrasını sahte SLA olarak gösteriyoruz. */}
-              <SlaTimer dueAt={new Date(new Date(item.createdAt).getTime() + 30 * 60000).toISOString()} />
-            </Stack>
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          // GEÇİCİ: gerçek priority/slaDueAt alanları Request tipine gelene kadar
+          // (bkz. Efe'nin E1 maddesi) oluşturulma anından 30 dk sonrasını sahte
+          // SLA hedefi olarak kullanıyoruz — Plan §16.6 durum şeridi mantığı
+          // (SlaPolicy) gerçek veriyle bağlandığında bu satırlar item.priority /
+          // item.slaDueAt olacak, bileşenler değişmeyecek.
+          const createdAt = new Date(item.createdAt);
+          const dueAt = new Date(createdAt.getTime() + 30 * 60000);
+          const progress = slaProgress(createdAt, dueAt);
+          const nearBreach = isNearSla(createdAt, dueAt);
+          const breached = isSlaBreached(dueAt);
+
+          return (
+            <Pressable
+              onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
+              background="surface"
+              radius="md"
+              style={{ width: '100%', marginBottom: spacing.sm, flexDirection: 'row', overflow: 'hidden' }}
+            >
+              <SlaStrip progress={progress} isNearBreach={nearBreach} isBreached={breached} />
+              <Stack style={{ flex: 1, padding: spacing.md, alignItems: 'flex-start' }}>
+                <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
+                  <Text variant="bodyBold">{products[item.productId]}</Text>
+                  <StatusChip status={item.status} />
+                </Stack>
+                <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
+                  {/* GEÇİCİ: gerçek priority alanı gelince item.priority olacak */}
+                  <PriorityBadge priority="NORMAL" />
+                  <SlaTimer dueAt={dueAt.toISOString()} />
+                </Stack>
+              </Stack>
+            </Pressable>
+          );
+        }}
         ListEmptyComponent={
           <EmptyState
             title="Kuyruk boş"

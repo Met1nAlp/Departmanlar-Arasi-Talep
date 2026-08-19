@@ -7,20 +7,23 @@ import { colors, spacing, radius } from '../tokens';
 // Şimdilik string union olarak tanımlıyoruz, tip hazır olunca oradan import edeceğiz.
 export type Priority = 'LINE_DOWN' | 'URGENT' | 'NORMAL' | 'PLANNED';
 
-const priorityConfig: Record<Priority, { color: string; label: string }> = {
-  LINE_DOWN: { color: colors.danger, label: 'HAT DURDU' },
-  URGENT: { color: colors.warning, label: 'Acil' },
-  NORMAL: { color: colors.blue, label: 'Normal' },
-  PLANNED: { color: colors.textMuted, label: 'Planlı' },
+// Plan §16.2: HAT DURDU = tehlike (kırmızı), ACİL = işlemde/uyarı (amber),
+// NORMAL = bekliyor (mavi), PLANLI = nötr (gri). Mockup'taki dolgulu pill
+// stiline uyarlandı (bkz. "Yeni öncelik seçin" ekranı).
+const priorityConfig: Record<Priority, { color: string; bgColor: string; label: string }> = {
+  LINE_DOWN: { color: colors.stateDanger, bgColor: colors.stateDangerBg, label: 'HAT DURDU' },
+  URGENT: { color: colors.stateActive, bgColor: colors.stateActiveBg, label: 'Acil' },
+  NORMAL: { color: colors.statePending, bgColor: colors.blueLight, label: 'Normal' },
+  PLANNED: { color: colors.stateNeutral, bgColor: colors.stateNeutralBg, label: 'Planlı' },
 };
 
 export function PriorityBadge({ priority }: { priority: Priority }) {
   const config = priorityConfig[priority];
 
   return (
-    <View style={[styles.badge, { borderColor: config.color }]}>
+    <View style={[styles.badge, { backgroundColor: config.bgColor }]}>
       <View style={[styles.dot, { backgroundColor: config.color }]} />
-      <Text variant="caption" color="textPrimary" style={{ fontWeight: '700' }}>
+      <Text variant="caption" color="textPrimary" style={{ fontWeight: '700', color: config.color }}>
         {config.label}
       </Text>
     </View>
@@ -31,10 +34,9 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    paddingVertical: 4,
     alignSelf: 'flex-start',
   },
   dot: {
