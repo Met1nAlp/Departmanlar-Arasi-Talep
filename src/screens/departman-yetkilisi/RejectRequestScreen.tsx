@@ -10,6 +10,7 @@ import { Button } from '../../design-system/components/Button';
 import { TextField } from '../../design-system/components/TextField';
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
 import { spacing, colors } from '../../design-system/tokens';
+import { Ionicons } from '@expo/vector-icons';
 
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'RejectRequest'>;
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RejectRequest'>;
@@ -56,17 +57,20 @@ export default function RejectRequestScreen() {
             <Pressable
               key={reason}
               onPress={() => setSelectedReason(reason)}
-              background="surface"
+              background={isSelected ? 'blueLight' : 'surface'}
               radius="md"
               style={{
                 width: '100%',
                 paddingHorizontal: spacing.md,
-                justifyContent: 'flex-start',
+                justifyContent: 'space-between',
+                flexDirection: 'row',
+                alignItems: 'center',
                 borderWidth: isSelected ? 2 : 0,
                 borderColor: colors.blue,
               }}
             >
               <Text variant="body">{reason}</Text>
+              {isSelected && <Ionicons name="checkmark-circle" size={22} color={colors.blue} />}
             </Pressable>
           );
         })}
