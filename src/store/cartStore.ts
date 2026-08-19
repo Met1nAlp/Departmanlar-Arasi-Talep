@@ -8,7 +8,7 @@ export interface CartLine {
 
 interface CartState {
   lines: CartLine[];
-  addLine: (partId: string, partName: string) => void;
+  addLine: (partId: string, partName: string, qty?: number) => void;
   updateQty: (partId: string, qty: number) => void;
   removeLine: (partId: string) => void;
   clear: () => void;
@@ -17,18 +17,18 @@ interface CartState {
 export const useCartStore = create<CartState>((set) => ({
   lines: [],
 
-  addLine: (partId, partName) =>
+  addLine: (partId, partName, qty = 1) =>
     set((state) => {
-      // Aynı ürün zaten sepette varsa, tekrar eklemek yerine adedini 1 artır
+      // Aynı ürün zaten sepette varsa, tekrar eklemek yerine adedini artır
       const existing = state.lines.find((l) => l.partId === partId);
       if (existing) {
         return {
           lines: state.lines.map((l) =>
-            l.partId === partId ? { ...l, qtyRequested: l.qtyRequested + 1 } : l
+            l.partId === partId ? { ...l, qtyRequested: l.qtyRequested + qty } : l
           ),
         };
       }
-      return { lines: [...state.lines, { partId, partName, qtyRequested: 1 }] };
+      return { lines: [...state.lines, { partId, partName, qtyRequested: qty }] };
     }),
 
   updateQty: (partId, qty) =>

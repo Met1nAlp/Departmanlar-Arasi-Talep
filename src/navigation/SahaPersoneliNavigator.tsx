@@ -10,9 +10,9 @@ import RequestTrackingScreen from '../screens/saha-personeli/RequestTrackingScre
 import DeliveryConfirmScreen from '../screens/saha-personeli/DeliveryConfirmScreen';
 import CancelRequestScreen from '../screens/saha-personeli/CancelRequestScreen';
 import ProductSearchScreen from '../screens/saha-personeli/ProductSearchScreen';
-import PrioritySelectScreen from '../screens/saha-personeli/PrioritySelectScreen';
 import SettingsScreen from '../screens/shared/SettingsScreen';
 import PartSearchForCartScreen from '../screens/saha-personeli/PartSearchForCartScreen';
+import CartQuantityScreen from '../screens/saha-personeli/CartQuantityScreen';
 import MaterialRequestCartScreen from '../screens/saha-personeli/MaterialRequestCartScreen';
 
 
@@ -27,17 +27,25 @@ export default function SahaPersoneliNavigator() {
         headerTitleStyle: typography.h2,
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: 'Taleplerim' }} />
-      <Stack.Screen name="PrioritySelect" component={PrioritySelectScreen} options={{ title: 'Öncelik Seç' }} />
-      <Stack.Screen name="DepartmentSelect" component={DepartmentSelectScreen} options={{ title: 'Departman Seç' }} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DepartmentSelect" component={DepartmentSelectScreen} options={{ headerShown: false }} />
       <Stack.Screen name="QRScan" component={QRScanScreen} options={{ title: 'QR Kod Okut' }} />
-      <Stack.Screen name="RequestCreated" component={RequestCreatedScreen} options={{ title: 'Talep Oluşturuldu' }} />
-      <Stack.Screen name="RequestTracking" component={RequestTrackingScreen} options={{ title: 'Talep Takibi' }} />
-      <Stack.Screen name="DeliveryConfirm" component={DeliveryConfirmScreen} options={{ title: 'Teslim Onayı' }} />
-      <Stack.Screen name="CancelRequest" component={CancelRequestScreen} options={{ title: 'Talebi İptal Et' }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Ayarlar' }} />
+      <Stack.Screen
+        name="RequestCreated"
+        component={RequestCreatedScreen}
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+      <Stack.Screen name="RequestTracking" component={RequestTrackingScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="DeliveryConfirm"
+        component={DeliveryConfirmScreen}
+        options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen name="CancelRequest" component={CancelRequestScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ProductSearch" component={ProductSearchScreen} options={{ title: 'Ürün Ara' }} />
-      <Stack.Screen name="PartSearchForCart" component={PartSearchForCartScreen} options={{ title: 'Ürün Ekle' }} />
+      <Stack.Screen name="PartSearchForCart" component={PartSearchForCartScreen} options={{ title: 'Parça Ara' }} />
+      <Stack.Screen name="CartQuantity" component={CartQuantityScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MaterialRequestCart" component={MaterialRequestCartScreen} options={{ title: 'Çoklu Talep' }} />
     </Stack.Navigator>
   );

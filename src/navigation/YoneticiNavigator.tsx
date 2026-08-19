@@ -26,9 +26,9 @@ function YoneticiTabs() {
         tabBarInactiveTintColor: colors.textMuted,
       }}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Özet' }} />
-      <Tab.Screen name="AllRequests" component={AllRequestsScreen} options={{ title: 'Tüm Talepler' }} />
-      <Tab.Screen name="DepartmentReports" component={DepartmentReportsScreen} options={{ title: 'Raporlar' }} />
+      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Özet', headerShown: false }} />
+      <Tab.Screen name="AllRequests" component={AllRequestsScreen} options={{ title: 'Tüm Talepler', headerShown: false }} />
+      <Tab.Screen name="DepartmentReports" component={DepartmentReportsScreen} options={{ title: 'Raporlar', headerShown: false }} />
     </Tab.Navigator>
   );
 }
@@ -42,22 +42,22 @@ export default function YoneticiNavigator() {
       <RootStack.Screen
         name="AuditTimeline"
         component={AuditTimelineScreen}
-        options={{ headerShown: true, title: 'Denetim Zaman Çizelgesi', presentation: 'modal' }}
+        options={{ headerShown: false, presentation: 'modal' }}
       />
       <RootStack.Screen
-  name="EscalationList"
-  component={EscalationListScreen}
-  options={{ headerShown: true, title: 'Eskalasyon Listesi', presentation: 'modal' }}
-/>
-<RootStack.Screen
-  name="ChangePriority"
-  component={ChangePriorityScreen}
-  options={{ headerShown: true, title: 'Öncelik Değiştir', presentation: 'modal' }}
-/>
+        name="EscalationList"
+        component={EscalationListScreen}
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
+      <RootStack.Screen
+        name="ChangePriority"
+        component={ChangePriorityScreen}
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
       <RootStack.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ headerShown: true, title: 'Ayarlar', presentation: 'modal' }}
+        options={{ headerShown: false, presentation: 'modal' }}
       />
     </RootStack.Navigator>
   );

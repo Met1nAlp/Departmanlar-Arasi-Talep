@@ -1,6 +1,6 @@
 // src/screens/saha-personeli/QRScanScreen.tsx
 import { useState, useEffect } from 'react';
-import { View } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -35,6 +35,13 @@ export default function QRScanScreen() {
   const [notFound, setNotFound] = useState(false);
   const [quantity, setQuantity] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+
+  // Kamera adımında ScanTarget kendi (koyu, kamera üstüne binen) header'ını çiziyor;
+  // adet girme adımında ise standart native header'a dönüyoruz.
+  useEffect(() => {
+    navigation.setOptions({ headerShown: scanned });
+  }, [navigation, scanned]);
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scanned) return;
@@ -96,52 +103,66 @@ export default function QRScanScreen() {
         <CameraView
           style={{ flex: 1 }}
           facing="back"
+          enableTorch={torchOn}
           barcodeScannerSettings={{ barcodeTypes: [...SUPPORTED_BARCODE_TYPES] }}
           onBarcodeScanned={handleBarcodeScanned}
         />
-        <ScanTarget instruction="Ürünün kodunu kadraja alın" onBack={() => navigation.goBack()} />
+        <ScanTarget
+          title="Parça Etiketini Okut"
+          subtitle="Adım 2/2 · Yeni talep"
+          onBack={() => navigation.goBack()}
+          hint="Karekodu çerçeve içinde tutun"
+          onManualEntry={() => navigation.navigate('ProductSearch', { departmentId: route.params.departmentId })}
+          torchOn={torchOn}
+          onToggleTorch={() => setTorchOn((v) => !v)}
+          footerNote="Etiket yıpranmışsa parça numarasını elle girin"
+        />
       </View>
     );
   }
 
-  return (
-    <Box style={{ flex: 1 }} background="white" padding="lg">
-      {notFound ? (
+  if (notFound) {
+    return (
+      <Box style={{ flex: 1 }} background="white" padding="lg">
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text variant="body" color="textPrimary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
             Bu koda kayıtlı bir ürün bulunamadı
           </Text>
           <Button label="Tekrar Okut" onPress={handleRescan} fullWidth={false} style={{ paddingHorizontal: spacing.xl }} />
         </View>
-      ) : (
-        <>
-          <Text variant="h2" style={{ marginBottom: spacing.xs }}>
-            {product?.name}
-          </Text>
-          <Text variant="body" color="textSecondary" style={{ marginBottom: spacing.lg }}>
-            Adet
-          </Text>
-          <Text variant="h1" color="blue" style={{ textAlign: 'center', marginBottom: spacing.lg, minHeight: 40 }}>
-            {quantity || '0'}
-          </Text>
-          <NumericKeypad value={quantity} onChange={setQuantity} maxLength={4} />
-          <Box style={{ marginTop: spacing.lg }}>
-            <Button
-              testID="qr-submit-request"
-              label="Talebi Oluştur"
-              onPress={handleSubmit}
-              loading={submitting}
-              disabled={quantity === '' || Number(quantity) <= 0}
-            />
-            <Button
-              label={route.params.preselectedProduct ? 'Farklı Ürün Seç' : 'Farklı Ürün Okut'}
-              onPress={route.params.preselectedProduct ? () => navigation.goBack() : handleRescan}
-              variant="secondary"
-              style={{ marginTop: spacing.sm }}
-            />
-          </Box>
-        </>
-      )}
+      </Box>
+    );
+  }
+
+  return (
+    <Box style={{ flex: 1 }} background="white">
+      <ScrollView contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}>
+        <Text variant="h2" style={{ marginBottom: spacing.xs }}>
+          {product?.name}
+        </Text>
+        <Text variant="body" color="textSecondary" style={{ marginBottom: spacing.sm }}>
+          Adet
+        </Text>
+        <Text variant="h1" color="blue" style={{ textAlign: 'center', marginBottom: spacing.sm, minHeight: 40 }}>
+          {quantity || '0'}
+        </Text>
+        <NumericKeypad value={quantity} onChange={setQuantity} maxLength={4} />
+      </ScrollView>
+      <Box padding="md" style={{ paddingTop: 0 }}>
+        <Button
+          testID="qr-submit-request"
+          label="Talebi Oluştur"
+          onPress={handleSubmit}
+          loading={submitting}
+          disabled={quantity === '' || Number(quantity) <= 0}
+        />
+        <Button
+          label={route.params.preselectedProduct ? 'Farklı Ürün Seç' : 'Farklı Ürün Okut'}
+          onPress={route.params.preselectedProduct ? () => navigation.goBack() : handleRescan}
+          variant="secondary"
+          style={{ marginTop: spacing.sm }}
+        />
+      </Box>
     </Box>
   );
 }

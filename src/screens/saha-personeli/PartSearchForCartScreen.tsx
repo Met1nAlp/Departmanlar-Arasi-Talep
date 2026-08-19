@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
@@ -20,7 +21,6 @@ export default function PartSearchForCartScreen() {
   const navigation = useNavigation<Nav>();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(mockProducts);
-  const addLine = useCartStore((s) => s.addLine);
   const cartCount = useCartStore((s) => s.lines.length);
 
   useEffect(() => {
@@ -43,23 +43,44 @@ export default function PartSearchForCartScreen() {
         data={results}
         keyExtractor={(item) => item.id}
         style={{ marginTop: spacing.md }}
+        contentContainerStyle={{ gap: spacing.sm }}
         renderItem={({ item }) => (
-          <Pressable
-            onPress={() => addLine(item.id, item.name)}
+          <Box
+            padding="md"
             background="surface"
             radius="md"
-            style={{ width: '100%', marginBottom: spacing.sm, paddingHorizontal: spacing.md, justifyContent: 'space-between', flexDirection: 'row' }}
+            style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
-            <Stack gap="xs">
-              <Text variant="bodyBold">{item.name}</Text>
-              <Text variant="caption" color="textMuted">
-                Kod: {item.qrCode}
-              </Text>
+            <Stack direction="row" align="center" gap="md" style={{ flex: 1 }}>
+              <Box
+                background="blueLight"
+                radius="md"
+                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="cube-outline" size={22} color={colors.blue} />
+              </Box>
+              <Stack gap="xs" style={{ flex: 1 }}>
+                <Text variant="bodyBold">{item.name}</Text>
+                <Text variant="caption" color="textMuted">
+                  Kod: {item.qrCode}
+                </Text>
+              </Stack>
             </Stack>
-            <Text variant="h2" color="blue">
-              +
-            </Text>
-          </Pressable>
+            <Pressable
+              onPress={() =>
+                navigation.navigate('CartQuantity', {
+                  productId: item.id,
+                  productName: item.name,
+                  qrCode: item.qrCode,
+                })
+              }
+              background="blue"
+              radius="md"
+              accessibilityLabel={`${item.name} ekle`}
+            >
+              <Ionicons name="add" size={22} color={colors.white} />
+            </Pressable>
+          </Box>
         )}
         ListEmptyComponent={<EmptyState title="Sonuç bulunamadı" icon="search-outline" />}
       />

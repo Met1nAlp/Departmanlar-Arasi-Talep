@@ -32,7 +32,8 @@
       "expo-secure-store"
     ],
     "extra": {
-      "realtimeWsUrl": ""
+      "realtimeWsUrl": "",
+      "mepsanServerUrl": ""
     }
   }
 }

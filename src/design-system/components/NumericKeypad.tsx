@@ -11,7 +11,7 @@ interface Props {
   maxLength?: number;
 }
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'backspace'];
+const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'backspace'];
 
 // Sistem klavyesi yerine — eldivenli elle, büyük dokunma alanlarıyla adet girişi.
 // Pressable üzerine kurulu olduğu için her tuş zaten 64dp garanti altında.
@@ -19,8 +19,8 @@ export function NumericKeypad({ value, onChange, maxLength = 4 }: Props) {
   const handlePress = (key: string) => {
     if (key === 'backspace') {
       onChange(value.slice(0, -1));
-    } else if (key === '') {
-      return; // boş hücre, dokunulamaz
+    } else if (key === 'clear') {
+      onChange('');
     } else if (value.length < maxLength) {
       onChange(value + key);
     }
@@ -32,14 +32,17 @@ export function NumericKeypad({ value, onChange, maxLength = 4 }: Props) {
         <Pressable
           key={index}
           onPress={() => handlePress(key)}
-          disabled={key === ''}
-          background={key === '' ? undefined : 'surface'}
+          background="surface"
           radius="md"
           style={styles.key}
-          accessibilityLabel={key === 'backspace' ? 'Sil' : key}
+          accessibilityLabel={key === 'backspace' ? 'Sil' : key === 'clear' ? 'Temizle' : key}
         >
           {key === 'backspace' ? (
             <Ionicons name="backspace-outline" size={24} color={colors.textPrimary} />
+          ) : key === 'clear' ? (
+            <Text variant="caption" color="textSecondary" style={{ fontWeight: '700' }}>
+              TEMİZLE
+            </Text>
           ) : (
             <Text variant="h1" color="textPrimary">
               {key}

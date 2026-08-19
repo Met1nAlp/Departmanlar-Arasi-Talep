@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Product } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
@@ -11,7 +12,7 @@ import { Text } from '../../design-system/primitives/Text';
 import { Pressable } from '../../design-system/primitives/Pressable';
 import { TextField } from '../../design-system/components/TextField';
 import { EmptyState } from '../../design-system/components/EmptyState';
-import { spacing } from '../../design-system/tokens';
+import { colors, spacing } from '../../design-system/tokens';
 import { mockProducts } from '../../mocks/products';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'ProductSearch'>;
@@ -55,18 +56,29 @@ export default function ProductSearchScreen() {
         data={results}
         keyExtractor={(item) => item.id}
         style={{ marginTop: spacing.md }}
+        contentContainerStyle={{ gap: spacing.sm }}
         renderItem={({ item }) => (
           <Pressable
             onPress={() => handleSelect(item)}
             background="surface"
             radius="md"
-            style={{ width: '100%', marginBottom: spacing.sm, paddingHorizontal: spacing.md, justifyContent: 'flex-start' }}
+            style={{ width: '100%', paddingHorizontal: spacing.md, justifyContent: 'flex-start' }}
           >
-            <Stack gap="xs">
-              <Text variant="bodyBold">{item.name}</Text>
-              <Text variant="caption" color="textMuted">
-                Kod: {item.qrCode}
-              </Text>
+            <Stack direction="row" align="center" gap="md" style={{ width: '100%' }}>
+              <Box
+                background="blueLight"
+                radius="md"
+                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="cube-outline" size={22} color={colors.blue} />
+              </Box>
+              <Stack gap="xs" style={{ flex: 1 }}>
+                <Text variant="bodyBold">{item.name}</Text>
+                <Text variant="caption" color="textMuted">
+                  Kod: {item.qrCode}
+                </Text>
+              </Stack>
+              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
             </Stack>
           </Pressable>
         )}

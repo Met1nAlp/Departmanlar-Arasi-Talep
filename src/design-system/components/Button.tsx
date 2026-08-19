@@ -4,7 +4,7 @@ import { Pressable } from '../primitives/Pressable';
 import { Text } from '../primitives/Text';
 import { colors, radius, spacing } from '../tokens';
 
-type Variant = 'primary' | 'secondary' | 'danger';
+type Variant = 'primary' | 'secondary' | 'danger' | 'dangerOutline';
 
 interface Props {
   label: string;
@@ -22,6 +22,7 @@ const variantStyles: Record<Variant, { background: keyof typeof colors; textColo
   primary: { background: 'blue', textColor: 'white' },
   secondary: { background: 'surface', textColor: 'blue' },
   danger: { background: 'danger', textColor: 'white' },
+  dangerOutline: { background: 'white', textColor: 'danger' },
 };
 
 export function Button({
@@ -41,8 +42,8 @@ export function Button({
     paddingHorizontal: spacing.lg,
     opacity: isInactive ? 0.5 : 1,
     width: fullWidth ? '100%' : undefined,
-    borderWidth: variant === 'secondary' ? 1 : 0,
-    borderColor: colors.blue,
+    borderWidth: variant === 'secondary' || variant === 'dangerOutline' ? 1 : 0,
+    borderColor: variant === 'dangerOutline' ? colors.danger : colors.blue,
   };
 
   return (

@@ -1,5 +1,4 @@
 import { Product } from "../types";
-import { Priority } from '../design-system/components/PriorityBadge';
 
 export type AuthStackParamList = {
   DeviceEnroll: undefined;
@@ -11,8 +10,7 @@ export type AuthStackParamList = {
 
 export type SahaPersoneliStackParamList = {
   Home: undefined;
-  PrioritySelect: undefined;
-  DepartmentSelect: { priority?: Priority };
+  DepartmentSelect: undefined;
   ProductSearch: { departmentId: string };
   QRScan: { departmentId: string; preselectedProduct?: Product };
   RequestCreated: { requestId: string };
@@ -21,6 +19,7 @@ export type SahaPersoneliStackParamList = {
   CancelRequest: { requestId: string };
   Settings: undefined;
   PartSearchForCart: undefined;
+  CartQuantity: { productId: string; productName: string; qrCode: string };
   MaterialRequestCart: undefined;
 };
 
@@ -32,7 +31,7 @@ export type DepartmanYetkilisiStackParamList = {
   MaterialRequestQueue: undefined;
   PartialFulfillment: { requestId: string };
   ContainerSelect: { requestId: string };
-  SerialCapture: { lineId: string; qty: number };
+  SerialCapture: { lineId: string; qty: number; requestNo?: string; productName?: string };
 };
 
 export type YoneticiStackParamList = {

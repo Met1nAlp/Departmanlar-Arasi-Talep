@@ -22,14 +22,22 @@ export default function DepartmanYetkilisiNavigator() {
         headerTitleStyle: typography.h2,
       }}
     >
-      <Stack.Screen name="IncomingRequests" component={IncomingRequestsScreen} options={{ title: 'Gelen Talepler' }} />
-      <Stack.Screen name="RequestDetail" component={RequestDetailScreen} options={{ title: 'Talep Detayı' }} />
+      <Stack.Screen name="IncomingRequests" component={IncomingRequestsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="RequestDetail" component={RequestDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="RejectRequest" component={RejectRequestScreen} options={{ title: 'Talebi Reddet' }} />
-      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Ayarlar' }} />
-      <Stack.Screen name="MaterialRequestQueue" component={MaterialRequestQueueScreen} options={{ title: 'Çok Kalemli Talepler' }} />
-      <Stack.Screen name="PartialFulfillment" component={PartialFulfillmentScreen} options={{ title: 'Karşılama' }} />
-      <Stack.Screen name="ContainerSelect" component={ContainerSelectScreen} options={{ title: 'Kap Seç', presentation: 'modal' }} />
-      <Stack.Screen name="SerialCapture" component={SerialCaptureScreen} options={{ title: 'Seri No Gir', presentation: 'modal' }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="MaterialRequestQueue" component={MaterialRequestQueueScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="PartialFulfillment" component={PartialFulfillmentScreen} options={{ headerShown: false }} />
+      <Stack.Screen
+        name="ContainerSelect"
+        component={ContainerSelectScreen}
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
+      <Stack.Screen
+        name="SerialCapture"
+        component={SerialCaptureScreen}
+        options={{ headerShown: false, presentation: 'modal' }}
+      />
     </Stack.Navigator>
   );
 }

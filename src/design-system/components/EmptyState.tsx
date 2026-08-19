@@ -11,6 +11,9 @@ interface Props {
   description?: string;
   actionLabel?: string;
   onAction?: () => void;
+  actionVariant?: 'primary' | 'secondary';
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
 }
 
 // Boş liste, boş kuyruk, arama sonucu yok gibi tüm durumlar bu bileşenden geçmeli.
@@ -21,6 +24,9 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  actionVariant = 'secondary',
+  secondaryActionLabel,
+  onSecondaryAction,
 }: Props) {
   return (
     <View style={styles.container}>
@@ -34,7 +40,22 @@ export function EmptyState({
         </Text>
       )}
       {actionLabel && onAction && (
-        <Button label={actionLabel} onPress={onAction} variant="secondary" fullWidth={false} style={styles.action} />
+        <Button
+          label={actionLabel}
+          onPress={onAction}
+          variant={actionVariant}
+          fullWidth={false}
+          style={styles.action}
+        />
+      )}
+      {secondaryActionLabel && onSecondaryAction && (
+        <Button
+          label={secondaryActionLabel}
+          onPress={onSecondaryAction}
+          variant="secondary"
+          fullWidth={false}
+          style={styles.secondaryAction}
+        />
       )}
     </View>
   );
@@ -57,6 +78,10 @@ const styles = StyleSheet.create({
   },
   action: {
     marginTop: spacing.lg,
+    paddingHorizontal: spacing.xl,
+  },
+  secondaryAction: {
+    marginTop: spacing.sm,
     paddingHorizontal: spacing.xl,
   },
 });

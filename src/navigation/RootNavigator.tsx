@@ -4,8 +4,8 @@ import { View, ActivityIndicator } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { useDeviceStore } from '../store/deviceStore';
 import { colors } from '../constants/theme';
-import ConnectionBanner from '../components/ConnectionBanner';
 import { connectRealtime, disconnectRealtime } from '../infrastructure/realtime/instance';
+import { connectMepsanServer, disconnectMepsanServer } from '../infrastructure/mepsanServer/instance';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 import { syncCatalog } from '../infrastructure/sync/CatalogSync';
 import { database } from '../infrastructure/db';
@@ -41,10 +41,17 @@ export default function RootNavigator() {
     // yapmaz — bağlantı hazır olduğunda tek satır bile değişmeyecek.
     if (activeSession) {
       connectRealtime(activeSession.user);
+      // Barış'ın Qt/C++ WebSocket sunucusu — bkz. infrastructure/mepsanServer/instance.ts.
+      // Sunucu adresi yapılandırılmamışsa (mepsanServerConfig.ts) no-op'tur.
+      connectMepsanServer(activeSession.user);
     } else {
       disconnectRealtime();
+      disconnectMepsanServer();
     }
-    return () => disconnectRealtime();
+    return () => {
+      disconnectRealtime();
+      disconnectMepsanServer();
+    };
   }, [activeSession]);
 
   useEffect(() => {
@@ -66,7 +73,9 @@ export default function RootNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ConnectionBanner />
+      {/* Henüz gerçek bir backend WS ucu yok (bkz. config/realtimeConfig.ts) —
+          bu yüzden bağlantı durumu her zaman "Çevrimdışı" görünürdü ve yanıltıcıydı.
+          Backend hazır olunca <ConnectionBanner /> buraya geri eklenebilir. */}
       <NavigationContainer>
         {!user && <AuthNavigator />}
         {user?.role === 'saha_personeli' && <SahaPersoneliNavigator />}

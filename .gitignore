@@ -30,6 +30,9 @@ yarn-error.*
 .DS_Store
 *.pem
 
+# stray Windows shell redirect artifact
+nul
+
 # local env files
 .env*.local
 
