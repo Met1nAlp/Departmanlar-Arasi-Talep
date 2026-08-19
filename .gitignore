@@ -39,3 +39,10 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Node.js binary (indirilen node klasörü)
+node-v20.20.2-linux-x64/
+node-v20.20.2-linux-x64.tar.xz
+
+# Qt build çıktısı
+Mepsan_Server/build-MepsanServer-Desktop-Debug/
