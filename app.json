@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "talep-uygulamasi",
+    "slug": "talep-uygulamasi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.mepsan.talepuygulamasi",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.NFC"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ürün QR kodunu okutmak için kameraya erişim gerekiyor."
+        }
+      ],
+      "expo-secure-store",
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Kartınızı okutarak giriş yapmak için NFC erişimi gerekiyor.",
+          "selectIdentifiers": [],
+          "systemCodes": []
+        }
+      ]
+    ],
+    "extra": {
+      "realtimeWsUrl": "",
+      "mepsanServerUrl": "",
+      "eas": {
+        "projectId": "a406fa4a-b98a-4acd-958a-d6e2ecddd8f0"
+      }
+    }
+  }
+}

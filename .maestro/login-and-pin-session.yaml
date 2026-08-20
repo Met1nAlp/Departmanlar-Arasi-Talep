@@ -1,0 +1,27 @@
+appId: com.anonymous.talepuygulamasi
+---
+# Plan Bölüm 14.2 adım 2-3: yetkili girişi + personel PIN oturumu. Cihazın
+# bu akıştan önce zaten kayıtlı olduğu varsayılır (bkz. device-enroll.yaml —
+# ayrı akış olarak tutuldu çünkü `clearState: true` her ikisinde de olsaydı
+# bu akış her seferinde Cihaz Kaydı ekranında takılırdı).
+- runFlow: device-enroll.yaml
+- tapOn:
+    id: "login-username-input"
+- inputText: "kemal.t"
+- tapOn:
+    id: "login-password-input"
+- inputText: "mepsan123"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "Kimsiniz?"
+- tapOn:
+    id: "pin-member-user-saha_personeli"
+- tapOn:
+    id: "pin-key-1"
+- tapOn:
+    id: "pin-key-2"
+- tapOn:
+    id: "pin-key-3"
+- tapOn:
+    id: "pin-key-4"
+- assertNotVisible: "PIN girin"

@@ -1,0 +1,7 @@
+# .maestro/config.yaml
+#
+# Maestro E2E akışları için ortak ayarlar (Plan Bölüm 19 "Test Stratejisi").
+# Bu akışlar gerçek bir cihaz/emülatörde `maestro test .maestro` ile
+# çalıştırılır — Jest birim testlerinin (src/**/__tests__) tersine, gerçek
+# native build gerektirir (bkz. android-native-build dalı notları).
+appId: com.anonymous.talepuygulamasi

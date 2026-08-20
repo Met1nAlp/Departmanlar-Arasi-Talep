@@ -1,0 +1,15 @@
+appId: com.anonymous.talepuygulamasi
+---
+# Plan Bölüm 14.2 adım 1: kayıtlı olmayan bir cihazda uygulama açılışta
+# doğrudan Cihaz Kaydı ekranını göstermeli, geçerli kod ile Yetkili
+# girişine geçebilmeli. NOT: bu akış temiz bir cihaz/emülatör durumu
+# varsayar (uygulama verisi silinmiş / ilk kurulum) — bkz. store/deviceStore.ts.
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: "device-enroll-code-input"
+- inputText: "MONTAJ1-001"
+- tapOn:
+    id: "device-enroll-submit"
+- assertVisible:
+    id: "login-username-input"
