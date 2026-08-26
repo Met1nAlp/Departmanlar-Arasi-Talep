@@ -22,14 +22,21 @@ function cleanTimestamp(value: unknown): string | undefined {
   return value;
 }
 
-/** GET_REQUESTS cevabındaki tek bir öğeyi (zaten camelCase) Request tipine uydurur. */
 export function mapServerRequestToRequest(raw: Record<string, unknown>): Request {
+  const rawPriority = String(raw.priority ?? '').toUpperCase();
+  const priority: 'ACIL' | 'NORMAL' =
+    rawPriority.includes('ACIL') || rawPriority.includes('YUKSEK') || rawPriority.includes('URGENT')
+      ? 'ACIL'
+      : 'NORMAL';
   return {
     id: String(raw.id ?? ''),
     requesterId: String(raw.requesterId ?? ''),
+    requesterName: cleanTimestamp(raw.requesterName),
     departmentId: String(raw.departmentId ?? ''),
     productId: String(raw.productId ?? ''),
     quantity: Number(raw.quantity ?? 0),
+    fulfilledQuantity: typeof raw.fulfilledQuantity === 'number' ? raw.fulfilledQuantity : undefined,
+    priority,
     status: (String(raw.status ?? 'TALEP_ALINDI') as RequestStatus),
     deliveryMethod: DEFAULT_DELIVERY_METHOD,
     createdAt: String(raw.createdAt ?? ''),
@@ -37,17 +44,22 @@ export function mapServerRequestToRequest(raw: Record<string, unknown>): Request
     readyAt: cleanTimestamp(raw.readyAt),
     onTheWayAt: cleanTimestamp(raw.onTheWayAt),
     deliveredAt: cleanTimestamp(raw.deliveredAt),
+    cancelledAt: cleanTimestamp(raw.cancelledAt),
+    cancelReason: cleanTimestamp(raw.cancelReason),
+    rejectedAt: cleanTimestamp(raw.rejectedAt),
+    rejectReason: cleanTimestamp(raw.rejectReason),
   };
 }
 
-/** CREATE_REQUEST komutunun beklediği snake_case gövde. */
 export function buildCreateRequestPayload(request: Request): Record<string, unknown> {
   return {
     id: request.id,
     requester_id: request.requesterId,
+    requester_name: request.requesterName ?? '',
     department_id: request.departmentId,
     product_id: request.productId,
     quantity: request.quantity,
+    priority: request.priority,
     status: request.status,
     created_at: request.createdAt,
   };
@@ -82,27 +94,117 @@ export function buildUpdateStatusPayload(
 }
 
 // ---------------------------------------------------------------------------
-// CARD_LOGIN —
-// NFC oturum modeli için. Sunucudan { status: "ok", user: { sicil_no,
-// full_name, role, department_id } } bekliyoruz. Komut gerçekten gelince bu
-// bölüm, gerçek alan isimlerine göre güncellenecek — şimdilik tahmini format.
+// CARD_LOGIN — GERÇEK format doğrulandı (2026-08-21):
+// { status: "ok"|"error", message: string, user: { found, id, name, department, role } }
 // ---------------------------------------------------------------------------
 
 import type { User, UserRole } from '../../types';
 
-export interface CardLoginUser {
-  id: string;
+export interface CardLoginRawUser {
+  found: boolean;
+  id: number;
   name: string;
-  role: UserRole;
-  departmentId?: string;
+  department: string; // DİKKAT: departman ADI geliyor, id değil
+  role: string;
 }
 
-/** CARD_LOGIN cevabındaki ham kullanıcı verisini bizim User tipine çevirir. */
-export function mapCardLoginResponseToUser(raw: Record<string, unknown>): User {
+export interface CardLoginRawResponse {
+  status: 'ok' | 'error';
+  message: string;
+  user?: CardLoginRawUser;
+}
+
+export type CardLoginResult =
+  | { outcome: 'success'; user: User }
+  | { outcome: 'not_found'; message: string }
+  | { outcome: 'error'; message: string };
+
+export function parseCardLoginResponse(raw: CardLoginRawResponse, cardUid: string): CardLoginResult {
+  if (raw.status === 'error') {
+    return { outcome: 'error', message: raw.message };
+  }
+  if (!raw.user || !raw.user.found) {
+    return { outcome: 'not_found', message: raw.message || 'Kart tanımlı değil.' };
+  }
+  return { outcome: 'success', user: mapCardLoginResponseToUser(raw.user, cardUid) };
+}
+
+function mapCardLoginResponseToUser(raw: CardLoginRawUser, cardUid: string): User {
   return {
-    id: String(raw.sicil_no ?? raw.id ?? ''),
-    name: String(raw.full_name ?? raw.name ?? ''),
-    role: (String(raw.role ?? 'saha_personeli') as UserRole),
-    departmentId: raw.department_id ? String(raw.department_id) : undefined,
+    id: String(raw.id),
+    name: raw.name,
+    role: raw.role as UserRole,
+    departmentId: raw.role === 'departman_yetkilisi' ? raw.department ?? undefined : undefined,
+    cardUid,
+  };
+}
+
+/** CANCEL_REQUEST komutunun beklediği snake_case gövde. */
+export function buildCancelRequestPayload(
+  id: string,
+  reason: string,
+  cancelledAt: string
+): Record<string, unknown> {
+  return {
+    id,
+    cancel_reason: reason,
+    cancelled_at: cancelledAt,
+  };
+}
+
+/** REJECT_REQUEST komutunun beklediği gövde — Barış'ın dokümanına göre
+ * CANCEL_REQUEST ile birebir aynı desende çalışıyor. */
+export function buildRejectRequestPayload(
+  id: string,
+  reason: string,
+  rejectedAt: string
+): Record<string, unknown> {
+  return {
+    id,
+    reject_reason: reason,
+    rejected_at: rejectedAt,
+  };
+}
+
+
+/**
+ * FULFILL_REQUEST komutunun gövdesi. Barış'ın dokümanındaki örnek sadece
+ * HAZIR adımı için "ready_at" gösteriyordu — biz UPDATE_REQUEST_STATUS'teki
+ * genel timestamp_field/timestamp_value desenini kullanıyoruz ki
+ * "Hazırlamaya Başla" adımında da (HAZIRLANIYOR) çalışsın. Test sonucuna
+ * göre bu varsayım doğrulanmalı — sunucu reddederse Barış'ın orijinal
+ * "ready_at" düz alan formatına döneceğiz.
+ */
+export function buildFulfillRequestPayload(
+  id: string,
+  status: RequestStatus,
+  fulfilledQuantity: number,
+  timestampValue: string
+): Record<string, unknown> {
+  const timestampField = STATUS_TIMESTAMP_COLUMN[status];
+  return {
+    id,
+    fulfilled_quantity: fulfilledQuantity,
+    status,
+    timestamp_field: timestampField ?? '',
+    timestamp_value: timestampField ? timestampValue : '',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// GET_PARTS — departman bazlı ürün listesi ve QR ile tekil ürün sorgusu.
+// Alan adı diğer komutlarla tutarlı: "department" (department_id değil).
+// ---------------------------------------------------------------------------
+
+import type { Product } from '../../types';
+
+export function mapServerPartToProduct(raw: Record<string, unknown>): Product {
+  return {
+    // GERÇEK cevapta ayrı bir "id" alanı yok — qrCode benzersiz olduğu için
+    // onu id olarak kullanıyoruz (GET_REQUESTS'teki gibi camelCase geliyor).
+    id: String(raw.qrCode ?? ''),
+    name: String(raw.name ?? '').trim(),
+    qrCode: String(raw.qrCode ?? ''),
+    departmentId: String(raw.department ?? ''),
   };
 }

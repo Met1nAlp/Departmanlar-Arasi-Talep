@@ -26,10 +26,8 @@ type Nav = NativeStackNavigationProp<YoneticiStackParamList, 'AllRequests'>;
 // diğer ekranlardaki (IncomingRequests, RequestDetail) aynı yer tutucuyla tutarlı.
 const FAKE_PRIORITY: Priority = 'NORMAL';
 const priorityColors: Record<Priority, keyof typeof colors> = {
-  LINE_DOWN: 'danger',
-  URGENT: 'warning',
+  ACIL: 'danger',
   NORMAL: 'blue',
-  PLANNED: 'textMuted',
 };
 
 export default function AllRequestsScreen() {
@@ -73,7 +71,10 @@ export default function AllRequestsScreen() {
           borderBottomRightRadius: radius.lg,
         }}
       >
-        <Text variant="h1" color="white" style={{ marginBottom: spacing.md }}>
+        <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
+          MTS · YÖNETİM
+        </Text>
+        <Text variant="h2" color="white" style={{ marginTop: spacing.xs, marginBottom: spacing.md }}>
           Tüm Talepler
         </Text>
         <TextField
@@ -94,7 +95,6 @@ export default function AllRequestsScreen() {
           ))}
         </Stack>
       </Box>
-
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
@@ -112,8 +112,13 @@ export default function AllRequestsScreen() {
               borderLeftColor: colors[priorityColors[FAKE_PRIORITY]],
             }}
           >
-            <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
-              <Text variant="caption" color="textMuted" style={{ letterSpacing: 1 }}>
+            <Stack direction="row" justify="space-between" align="center" gap="sm" style={{ width: '100%' }}>
+              <Text
+                variant="caption"
+                color="textMuted"
+                numberOfLines={1}
+                style={{ letterSpacing: 1, flexShrink: 1 }}
+              >
                 {item.id.toUpperCase()} · {departments.find((d) => d.id === item.departmentId)?.name.toUpperCase()}
               </Text>
               <PriorityBadge priority={FAKE_PRIORITY} />
@@ -143,7 +148,7 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
       radius="lg"
       style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.xs }}
     >
-      <Text variant="bodyBold" color={active ? 'blue' : 'white'}>
+      <Text variant="bodyBold" color={active ? 'blue' : 'white'} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>

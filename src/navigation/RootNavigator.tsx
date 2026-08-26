@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator , Text} from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../store/authStore';
 import { useDeviceStore } from '../store/deviceStore';
 import { colors } from '../constants/theme';
@@ -14,6 +15,8 @@ import AuthNavigator from './AuthNavigator';
 import SahaPersoneliNavigator from './SahaPersoneliNavigator';
 import DepartmanYetkilisiNavigator from './DepartmanYetkilisiNavigator';
 import YoneticiNavigator from './YoneticiNavigator';
+import { initNotificationService, checkAndNotifyMissedUpdates } from '../infrastructure/notifications/notificationService';
+import { navigationRef } from './navigationRef';
 
 export default function RootNavigator() {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -46,9 +49,22 @@ export default function RootNavigator() {
   }, [currentUser]);
 
   useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
     void outboxWorker.processQueue().then(refreshPendingSyncBadge);
     void syncCatalog(database);
   }, []);
+
+  useEffect(() => {
+    const cleanup = initNotificationService();
+    return cleanup;
+  }, []);
+
+  // Uygulama her açıldığında (currentUser hazır olunca), kapalıyken kaçırılan
+  // durum değişikliklerini kontrol et ve bildirim göster.
+  useEffect(() => {
+    if (!currentUser) return;
+    void checkAndNotifyMissedUpdates(database);
+  }, [currentUser]);
 
   if (isDeviceLoading) {
     return (
@@ -60,11 +76,16 @@ export default function RootNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         {!currentUser && <AuthNavigator />}
         {currentUser?.role === 'saha_personeli' && <SahaPersoneliNavigator />}
         {currentUser?.role === 'departman_yetkilisi' && <DepartmanYetkilisiNavigator />}
         {currentUser?.role === 'yonetici' && <YoneticiNavigator />}
+        {currentUser && !['saha_personeli','departman_yetkilisi','yonetici'].includes(currentUser.role) && (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white }}>
+            <Text>Tanınmayan rol: {currentUser.role}</Text>
+          </View>
+)}
       </NavigationContainer>
     </View>
   );

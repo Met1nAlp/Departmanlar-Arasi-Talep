@@ -1,40 +1,36 @@
 // src/infrastructure/sync/CatalogSync.ts
 //
-// Plan Bölüm 12.3 klasör yapısı + Bölüm 10.3 "Delta senkronizasyon: Katalog
-// GET /catalog/sync?since=<version> ile çekilir; yalnızca değişenler iner."
+// Plan Bölüm 12.3 klasör yapısı + Bölüm 10.3.
 //
-// Backend ucu henüz yok (mocks/catalog.ts geçici kaynak). Bu yüzden burada
-// GERÇEK delta değil, "versiyon değiştiyse tam değiştir" yapılıyor — ama
-// arayüz (syncCatalog()) ve kv_store'da sürüm takibi kalıcı sözleşmedir;
-// backend hazır olduğunda yalnızca `fetchRemoteCatalog()` içi değişecek
-// (mock diziler yerine gerçek fetch), geri kalan kod aynı kalır.
+// KAPSAM DEĞİŞTİ (2026-08-25): Bu senkron artık SADECE departmanları
+// yönetiyor. Ürünler (Part/PartBarcode) buradan tamamen çıkarıldı — onlar
+// artık api/products.ts'teki upsertProductsLocally() ile GERÇEK GET_PARTS
+// cevabından besleniyor. Bu senkron eskiden olduğu gibi parts/part_barcodes
+// tablolarını silip yeniden yazsaydı, gerçek sunucudan gelip kaydedilmiş
+// ürün verisini yanlışlıkla silerdi — bu yüzden buradan tamamen kaldırıldı.
+//
+// Backend departman ucu henüz yok (mocks/catalog.ts geçici kaynak). Backend
+// hazır olduğunda yalnızca fetchRemoteCatalog() içi değişecek.
 
 import { Q } from '@nozbe/watermelondb';
 import type { Database } from '@nozbe/watermelondb';
-import type { Department as ContractDepartment, Location as ContractLocation, Part as ContractPart } from '../../contracts/types';
+import type { Department as ContractDepartment } from '../../contracts/types';
 import Department from '../db/models/Department';
-import Location from '../db/models/Location';
-import Part from '../db/models/Part';
-import PartBarcode from '../db/models/PartBarcode';
 import KvStoreEntry from '../db/models/KvStoreEntry';
-import { mockCatalogDepartments, mockCatalogLocations, mockCatalogParts, mockCatalogVersion } from '../../mocks/catalog';
+import { mockCatalogDepartments, mockCatalogVersion } from '../../mocks/catalog';
 
 const CATALOG_VERSION_KEY = 'catalogVersion';
 
 interface RemoteCatalog {
   version: string;
   departments: ContractDepartment[];
-  locations: ContractLocation[];
-  parts: ContractPart[];
 }
 
-/** MOCK — backend geldiğinde `GET /catalog/sync?since=<version>` çağrısına dönüşecek. */
+/** MOCK — backend departman ucu geldiğinde gerçek fetch'e dönüşecek. */
 async function fetchRemoteCatalog(): Promise<RemoteCatalog> {
   return {
     version: mockCatalogVersion,
     departments: mockCatalogDepartments,
-    locations: mockCatalogLocations,
-    parts: mockCatalogParts,
   };
 }
 
@@ -45,9 +41,8 @@ async function getLocalCatalogVersion(database: Database): Promise<string | null
 }
 
 /**
- * Katalogu senkronize eder. Yerel sürüm zaten güncelse ağa hiç gitmez (mock'ta
- * bu kontrol anlamsız görünse de gerçek backend'de gereksiz veri çekimini
- * önleyen asıl kural budur).
+ * Departman kataloğunu senkronize eder. Yerel sürüm zaten güncelse hiçbir
+ * şey yapmaz. ÜRÜNLERE DOKUNMAZ — onların kaynağı ayrı (bkz. dosya başı notu).
  */
 export async function syncCatalog(database: Database): Promise<{ synced: boolean }> {
   const localVersion = await getLocalCatalogVersion(database);
@@ -57,26 +52,15 @@ export async function syncCatalog(database: Database): Promise<{ synced: boolean
   }
 
   const departmentsCol = database.get<Department>('departments');
-  const locationsCol = database.get<Location>('locations');
-  const partsCol = database.get<Part>('parts');
-  const barcodesCol = database.get<PartBarcode>('part_barcodes');
   const kvCol = database.get<KvStoreEntry>('kv_store');
 
-  const [existingDepts, existingLocs, existingParts, existingBarcodes, existingVersionRows] = await Promise.all([
+  const [existingDepts, existingVersionRows] = await Promise.all([
     departmentsCol.query().fetch(),
-    locationsCol.query().fetch(),
-    partsCol.query().fetch(),
-    barcodesCol.query().fetch(),
     kvCol.query(Q.where('key', CATALOG_VERSION_KEY)).fetch(),
   ]);
 
   await database.write(async () => {
-    const deletions = [
-      ...existingDepts.map((r) => r.prepareDestroyPermanently()),
-      ...existingLocs.map((r) => r.prepareDestroyPermanently()),
-      ...existingParts.map((r) => r.prepareDestroyPermanently()),
-      ...existingBarcodes.map((r) => r.prepareDestroyPermanently()),
-    ];
+    const deletions = existingDepts.map((r) => r.prepareDestroyPermanently());
 
     const departmentCreations = remote.departments.map((d) =>
       departmentsCol.prepareCreate((row) => {
@@ -88,45 +72,6 @@ export async function syncCatalog(database: Database): Promise<{ synced: boolean
       }),
     );
 
-    const locationCreations = remote.locations.map((l) =>
-      locationsCol.prepareCreate((row) => {
-        row._raw.id = l.id;
-        row.departmentId = l.departmentId;
-        row.code = l.code;
-        row.kind = l.kind;
-        row.mapRef = l.mapRef;
-      }),
-    );
-
-    const partCreations = remote.parts.map((p) =>
-      partsCol.prepareCreate((row) => {
-        row._raw.id = p.id;
-        row.partNo = p.partNo;
-        row.revision = p.revision;
-        row.descriptionTr = p.descriptionTr;
-        row.descriptionEn = p.descriptionEn;
-        row.uom = p.uom;
-        row.serialTracked = p.serialTracked;
-        row.lotTracked = p.lotTracked;
-        row.minStock = p.minStock;
-        row.defaultSupplierDeptId = p.defaultSupplierDeptId;
-        row.attributes = p.attributes ?? {};
-      }),
-    );
-
-    const barcodeCreations = remote.parts.flatMap((p) =>
-      p.barcodes.map((b) =>
-        barcodesCol.prepareCreate((row) => {
-          row._raw.id = b.id;
-          row.partId = b.partId;
-          row.symbology = b.symbology;
-          row.rawValue = b.rawValue;
-          row.parsedGtin = b.parsedGtin;
-          row.isPrimary = b.isPrimary;
-        }),
-      ),
-    );
-
     const versionUpsert = existingVersionRows[0]
       ? existingVersionRows[0].prepareUpdate((row) => {
           row.value = remote.version;
@@ -136,14 +81,7 @@ export async function syncCatalog(database: Database): Promise<{ synced: boolean
           row.value = remote.version;
         });
 
-    await database.batch(
-      ...deletions,
-      ...departmentCreations,
-      ...locationCreations,
-      ...partCreations,
-      ...barcodeCreations,
-      versionUpsert,
-    );
+    await database.batch(...deletions, ...departmentCreations, versionUpsert);
   });
 
   return { synced: true };

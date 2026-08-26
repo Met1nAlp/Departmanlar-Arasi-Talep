@@ -1,27 +1,23 @@
 // src/store/connectionStore.ts
-//
-// Bağlantı durumu için global store — Plan Bölüm 9.2: "Bağlantı durumu her
-// zaman görünür: Üst çubukta 🟢 Bağlı / 🟡 Bağlanıyor / 🔴 Çevrimdışı.
-// Kullanıcı asla belirsizlikte kalmaz." Metin'in ConnectionBanner bileşeni
-// (Plan Bölüm 23.3 hook sözleşmesi) bu store'u okuyacak.
-//
-// RealtimeClient.onStateChange(...) burada set() çağırarak bağlanır — bu
-// bağlama işi henüz app/providers katmanı kurulmadığı için yapılmadı
-// (bkz. RealtimeClient.ts dosya başı notu).
-
 import { create } from 'zustand';
 import type { ConnectionState } from '../infrastructure/realtime/RealtimeClient';
 
+export type DeviceAuthStatus = 'idle' | 'authorizing' | 'authorized' | 'unauthorized';
+
 interface ConnectionStoreState {
   status: ConnectionState;
-  pendingSyncCount: number; // Plan Bölüm 7.4: "Senkronize edilecek: N" rozeti
+  pendingSyncCount: number;
+  deviceAuthStatus: DeviceAuthStatus;
   setStatus: (status: ConnectionState) => void;
   setPendingSyncCount: (count: number) => void;
+  setDeviceAuthStatus: (status: DeviceAuthStatus) => void;
 }
 
 export const useConnectionStore = create<ConnectionStoreState>((set) => ({
   status: 'DISCONNECTED',
   pendingSyncCount: 0,
+  deviceAuthStatus: 'idle',
   setStatus: (status) => set({ status }),
   setPendingSyncCount: (pendingSyncCount) => set({ pendingSyncCount }),
+  setDeviceAuthStatus: (deviceAuthStatus) => set({ deviceAuthStatus }),
 }));

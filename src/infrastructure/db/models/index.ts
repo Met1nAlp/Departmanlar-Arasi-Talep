@@ -8,6 +8,7 @@ import RequestCache from './RequestCache';
 import OutboxRecord from './OutboxRecord';
 import EventLogLocal from './EventLogLocal';
 import KvStoreEntry from './KvStoreEntry';
+import NotificationRecord from './Notification';
 
 export const modelClasses = [
   Part,
@@ -18,6 +19,7 @@ export const modelClasses = [
   OutboxRecord,
   EventLogLocal,
   KvStoreEntry,
+  NotificationRecord,
 ];
 
-export { Part, PartBarcode, Department, Location, RequestCache, OutboxRecord, EventLogLocal, KvStoreEntry };
+export { Part, PartBarcode, Department, Location, RequestCache, OutboxRecord, EventLogLocal, KvStoreEntry, NotificationRecord };

@@ -1,9 +1,11 @@
 // src/design-system/tokens/spacing.ts
+import { scale } from './scale';
+
 export const spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
-  xxl: 48,
-} as const;
+  xs: scale(4),
+  sm: scale(8),
+  md: scale(16),
+  lg: scale(24),
+  xl: scale(32),
+  xxl: scale(48),
+};

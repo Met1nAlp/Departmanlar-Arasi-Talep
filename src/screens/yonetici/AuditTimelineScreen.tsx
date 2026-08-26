@@ -23,6 +23,8 @@ const STEP_TIMESTAMP_KEY: Record<RequestStatus, keyof Request> = {
   HAZIR: 'readyAt',
   YOLDA: 'onTheWayAt',
   TESLIM_EDILDI: 'deliveredAt',
+  IPTAL_EDILDI: 'cancelledAt',
+  REDDEDILDI: 'rejectedAt',
 };
 
 function formatDateTime(iso: string): string {
@@ -77,7 +79,7 @@ export default function AuditTimelineScreen() {
             <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
               {request.id.toUpperCase()} · DENETİM KAYDI
             </Text>
-            <Text variant="h2" color="white">
+            <Text variant="h2" color="white" numberOfLines={1} style={{ flexShrink: 1 }}>
               {productName}
             </Text>
           </Box>
@@ -130,7 +132,7 @@ export default function AuditTimelineScreen() {
         </Box>
       </Box>
 
-      <Box padding="md" style={{ paddingTop: 0 }}>
+      <Box padding="md" style={{ paddingTop: 0, paddingBottom: insets.bottom + spacing.md }}>
         <Pressable
           onPress={handleShare}
           background="white"

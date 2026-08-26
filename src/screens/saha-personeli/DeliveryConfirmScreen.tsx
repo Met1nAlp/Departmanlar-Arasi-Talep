@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { CommonActions, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
@@ -16,16 +16,20 @@ import { getRequestById, updateRequestStatus } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
+import { scale } from '../../design-system/tokens/scale';
+import { readCardUid, isNfcSupported, cancelReading } from '../../infrastructure/nfc/NfcReader';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
+
+type Step = 'idle' | 'reading' | 'mismatch' | 'unsupported' | 'confirming';
 
 export default function DeliveryConfirmScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const route = useRoute<Rt>();
   const user = useActiveUser();
-  const [confirming, setConfirming] = useState(false);
+  const [step, setStep] = useState<Step>('idle');
   const [request, setRequest] = useState<Request | null>(null);
   const [productName, setProductName] = useState('');
 
@@ -43,13 +47,38 @@ export default function DeliveryConfirmScreen() {
     });
   }, [route.params.requestId]);
 
-  const handleConfirm = async () => {
-    if (!allowed) return;
-    setConfirming(true);
-    await updateRequestStatus(route.params.requestId, 'TESLIM_EDILDI');
-    setConfirming(false);
-    navigation.popToTop();
+  useEffect(() => {
+    return () => {
+      cancelReading();
+    };
+  }, []);
+
+  const handleStartConfirm = async () => {
+    if (!allowed || !request || !user) return;
+
+    const supported = await isNfcSupported();
+    if (!supported) {
+      setStep('unsupported');
+      return;
+    }
+
+    setStep('reading');
+    try {
+      const scannedUid = await readCardUid();
+      if (scannedUid !== user.cardUid) {
+        setStep('mismatch');
+        return;
+      }
+
+      setStep('confirming');
+      await updateRequestStatus(request, 'TESLIM_EDILDI');
+      navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] }));
+    } catch {
+      setStep('mismatch');
+    }
   };
+
+  const isBusy = step === 'reading' || step === 'confirming';
 
   return (
     <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
@@ -68,28 +97,49 @@ export default function DeliveryConfirmScreen() {
         />
 
         <Box
-          background="blueLight"
-          style={{ width: 72, height: 72, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}
+          background={step === 'mismatch' || step === 'unsupported' ? 'dangerLight' : 'blueLight'}
+          style={{ width: scale(72), height: scale(72), borderRadius: scale(999), alignItems: 'center', justifyContent: 'center' }}
         >
-          <Ionicons name="grid-outline" size={32} color={colors.blue} />
+          <Ionicons
+            name={step === 'reading' ? 'radio-outline' : step === 'mismatch' || step === 'unsupported' ? 'close-circle' : 'grid-outline'}
+            size={32}
+            color={step === 'mismatch' || step === 'unsupported' ? colors.danger : colors.blue}
+          />
         </Box>
 
         <Text variant="h2" style={{ marginTop: spacing.lg, textAlign: 'center' }}>
-          Ürünü teslim aldınız mı?
+          {step === 'reading' && 'Kartınızı Okutun...'}
+          {step === 'confirming' && 'Onaylanıyor...'}
+          {step === 'mismatch' && 'Kart Eşleşmedi'}
+          {step === 'unsupported' && 'NFC Desteklenmiyor'}
+          {(step === 'idle') && 'Ürünü teslim aldınız mı?'}
         </Text>
-        {request && (
+
+        {step === 'idle' && request && (
           <Text variant="body" color="textSecondary" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
             {request.id.toUpperCase()} · {productName} <Text variant="bodyBold">{request.quantity} adet</Text>.{' '}
-            Onayladığınızda talep kapanır ve stoktan düşülür.
+            Onaylamak için kendi NFC kartınızı okutmanız gerekir.
+          </Text>
+        )}
+
+        {step === 'mismatch' && (
+          <Text variant="body" color="danger" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+            Okutulan kart, oturum açan kullanıcıyla eşleşmiyor. Lütfen kendi kartınızı okutun.
+          </Text>
+        )}
+
+        {step === 'unsupported' && (
+          <Text variant="body" color="danger" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
+            Bu cihaz NFC desteklemiyor, teslim onayı bu cihazdan yapılamıyor.
           </Text>
         )}
 
         <Stack style={{ width: '100%', marginTop: spacing.lg }}>
           <Button
-            label="Evet, Teslim Aldım"
-            onPress={handleConfirm}
-            loading={confirming}
-            disabled={!allowed || !request}
+            label={step === 'mismatch' ? 'Tekrar Dene' : 'Kartımı Okut ve Onayla'}
+            onPress={handleStartConfirm}
+            loading={isBusy}
+            disabled={!allowed || !request || step === 'unsupported'}
           />
           <Button
             label="Vazgeç"

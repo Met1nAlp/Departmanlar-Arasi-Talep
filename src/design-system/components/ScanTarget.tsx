@@ -11,7 +11,6 @@ interface Props {
   title: string;
   subtitle?: string;
   onBack: () => void;
-  // Yanlış parça okutulduğunda tam ekran kırmızı uyarı için (Efe'nin E6 maddesiyle bağlanacak)
   errorMode?: boolean;
   hint: string;
   onManualEntry: () => void;
@@ -19,13 +18,13 @@ interface Props {
   torchOn: boolean;
   onToggleTorch: () => void;
   footerNote?: string;
+  // YENİ: üst barda, başlığın sağında küçük bir aksiyon butonu (örn. sepeti bitirme)
+  rightActionLabel?: string;
+  onRightAction?: () => void;
 }
 
 const FRAME_HEIGHT = 220;
 
-// Kameranın ÜZERİNE bindirilen overlay katmanı — kameranın kendisini kırpmaz,
-// bu yüzden daha önce yaşadığımız siyah ekran sorununu tetiklemez.
-// CameraView'in dışında, ayrı bir katman olarak kullanılmalı (bkz. QRScanScreen).
 export function ScanTarget({
   title,
   subtitle,
@@ -37,6 +36,8 @@ export function ScanTarget({
   torchOn,
   onToggleTorch,
   footerNote,
+  rightActionLabel,
+  onRightAction,
 }: Props) {
   const insets = useSafeAreaInsets();
   const scanLine = useRef(new Animated.Value(0)).current;
@@ -55,14 +56,12 @@ export function ScanTarget({
   const frameColor = errorMode ? colors.danger : colors.blue;
 
   return (
-    // RN 0.86 (Expo 57) tiplerinde StyleSheet.absoluteFillObject kaldırıldı;
-    // absoluteFill aynı dolgu davranışını verir.
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <View style={[styles.topBar, { paddingTop: insets.top + spacing.sm }]} pointerEvents="auto">
         <Pressable onPress={onBack} background="black" style={styles.backButton} accessibilityLabel="Geri">
           <Ionicons name="chevron-back" size={20} color={colors.white} />
         </Pressable>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text variant="h2" color="white">
             {title}
           </Text>
@@ -72,6 +71,19 @@ export function ScanTarget({
             </Text>
           )}
         </View>
+        {rightActionLabel && onRightAction && (
+          <Pressable
+            onPress={onRightAction}
+            background="blue"
+            radius="md"
+            style={styles.rightActionButton}
+            accessibilityLabel={rightActionLabel}
+          >
+            <Text variant="caption" color="white" style={{ fontWeight: '700' }}>
+              {rightActionLabel}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.frameArea} pointerEvents="none">
@@ -141,8 +153,6 @@ export function ScanTarget({
   );
 }
 
-// Alt kontrol satırı için hafif bir row wrapper — Stack primitifi burada
-// import döngüsüne girmemesi için (design-system/components -> primitives yönü zaten var).
 function Stack({ children }: { children: React.ReactNode }) {
   return <View style={styles.row}>{children}</View>;
 }
@@ -169,6 +179,14 @@ const styles = StyleSheet.create({
   backButton: {
     marginRight: spacing.md,
     opacity: 0.6,
+  },
+  rightActionButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    minHeight: undefined,
+    minWidth: undefined,
+    marginLeft: spacing.sm,
+    alignSelf: 'center',
   },
   subtitle: {
     opacity: 0.7,

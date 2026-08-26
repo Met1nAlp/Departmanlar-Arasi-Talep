@@ -4,8 +4,9 @@ export interface User {
   id: string;
   name: string;
   role: UserRole;
-  departmentId?: string; 
+  departmentId?: string;
   pushToken?: string;
+  cardUid?: string;
 }
 
 export interface Department {
@@ -25,14 +26,19 @@ export type RequestStatus =
   | 'HAZIRLANIYOR'
   | 'HAZIR'
   | 'YOLDA'
-  | 'TESLIM_EDILDI';
+  | 'TESLIM_EDILDI'
+  | 'IPTAL_EDILDI'
+  | 'REDDEDILDI';
 
 export interface Request {
   id: string;
   requesterId: string;
+  requesterName?: string;
   departmentId: string;
   productId: string;
   quantity: number;
+  fulfilledQuantity?: number; 
+  priority: 'ACIL' | 'NORMAL';
   status: RequestStatus;
   deliveryMethod: 'elektrikli_transpalet';
   createdAt: string;
@@ -40,4 +46,8 @@ export interface Request {
   readyAt?: string;
   onTheWayAt?: string;
   deliveredAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
+  rejectedAt?: string;
+  rejectReason?: string;
 }

@@ -13,34 +13,53 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { TextField } from '../../design-system/components/TextField';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { colors, spacing } from '../../design-system/tokens';
-import { mockProducts } from '../../mocks/products';
+import { getProductsByDepartment } from '../../api/products';
+import { LoadingView } from '../../design-system/components/LoadingView';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'ProductSearch'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'ProductSearch'>;
 
-// GEÇİCİ: mockProducts içinden filtreliyoruz. Efe'nin katalog delta senkron
-// endpoint'i (E3) hazır olunca burası gerçek API + FlashList + FTS5'e bağlanacak.
 export default function ProductSearchScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Product[]>(mockProducts);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Departmanın ürünlerini bir kez çek. "ignore" flag'i, bu istekten önceki
+  // (eski) bir isteğin cevabı geç gelirse state'i ezmesini önler — sunucudan
+  // veri gelip kısa süre sonra tekrar boşalıp tekrar dolma görüntüsünün sebebi
+  // buydu (iki farklı cevabın state'i sırayla ezmesi).
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      const filtered = mockProducts.filter((p) =>
-        p.name.toLowerCase().includes(query.toLowerCase())
-      );
-      setResults(filtered);
-    }, 150); // PDF'in önerdiği 150ms debounce
+    let ignore = false;
+    setLoading(true);
+    getProductsByDepartment(route.params.departmentId).then((products) => {
+      if (ignore) return;
+      setAllProducts(products);
+      setLoading(false);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [route.params.departmentId]);
 
+  // Arama debounce'u artık sadece query'yi geciktiriyor, ayrı bir "results"
+  // state'ine yazmıyor — bu yüzden allProducts değiştiğinde ikinci bir
+  // gecikmeli setResults çağrısının onu ezme ihtimali kalmıyor.
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query), 150);
     return () => clearTimeout(timeout);
   }, [query]);
 
+  const results = allProducts.filter((p) =>
+    p.name.toLowerCase().includes(debouncedQuery.toLowerCase())
+  );
+
+  if (loading) return <LoadingView />;
+
   const handleSelect = (product: Product) => {
-    // Çok satırlı sepet henüz yok (Efe'nin domain katmanı sonrası eklenecek) —
-    // şimdilik doğrudan QR akışındaki gibi tek ürün seçimini geri döndürüyoruz.
-    navigation.navigate('QRScan', { departmentId: route.params.departmentId, preselectedProduct: product });
+    navigation.replace('QRScan', { departmentId: route.params.departmentId, priority: route.params.priority, preselectedProduct: product });
   };
 
   return (

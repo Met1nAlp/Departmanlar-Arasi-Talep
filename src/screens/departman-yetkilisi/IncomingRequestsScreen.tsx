@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
@@ -18,31 +18,25 @@ import { colors, spacing, radius } from '../../design-system/tokens';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { getDepartments } from '../../api/departments';
+import { useRequestUpdates } from '../../hooks/useRequestUpdates';
 import { useActiveUser } from '../../store/authStore';
+import { NotificationBell } from '../../design-system/components/NotificationBell';
 
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'IncomingRequests'>;
 
-// GEÇİCİ: gerçek priority alanı Request tipinde henüz yok (Efe'nin E1
-// maddesi). Bu fonksiyon, talebin id'sine göre SABİT (aynı talep hep aynı
-// rengi alır) ama SAHTE bir öncelik üretiyor — sadece görsel çeşitliliği
-// test etmek için. Gerçek priority alanı gelince TAMAMEN SİLİNECEK,
-// item.priority doğrudan kullanılacak.
-function getTempFakePriority(requestId: string): Priority {
-  const priorities: Priority[] = ['LINE_DOWN', 'URGENT', 'NORMAL', 'PLANNED'];
-  let hash = 0;
-  for (let i = 0; i < requestId.length; i++) hash += requestId.charCodeAt(i);
-  return priorities[hash % priorities.length];
-}
+type Filter = 'aktif' | 'kismi' | 'tamamlanan';
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'aktif', label: 'Aktif' },
+  { key: 'kismi', label: 'Kısmi' },
+  { key: 'tamamlanan', label: 'Tamamlanan' },
+];
 
 const priorityColors: Record<Priority, keyof typeof colors> = {
-  LINE_DOWN: 'danger',
-  URGENT: 'warning',
+  ACIL: 'danger',
   NORMAL: 'blue',
-  PLANNED: 'textMuted',
 };
 
-// GERÇEK veri — sahte SLA süresi yerine, elimizdeki tek gerçek zaman
-// bilgisinden (createdAt) hesaplanıyor.
 function getRelativeTime(iso: string): string {
   const diffMin = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (diffMin < 1) return 'az önce';
@@ -58,30 +52,55 @@ export default function IncomingRequestsScreen() {
   const [products, setProducts] = useState<Record<string, string>>({});
   const [departmentName, setDepartmentName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<Filter>('aktif');
 
-  useEffect(() => {
-    if (!user?.departmentId) return;
-    Promise.all([getRequests({ departmentId: user.departmentId }), getDepartments()]).then(
-      async ([reqs, departments]) => {
-        setRequests(reqs);
-        setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
-        const productList = await getProductsByIds(reqs.map((r) => r.productId));
-        setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
-        setLoading(false);
-      }
-    );
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      console.log('[FOCUS] IncomingRequests odaklandı, veri çekiliyor');
+      if (!user?.departmentId) return;
+      Promise.all([getRequests({ departmentId: user.departmentId }), getDepartments()]).then(
+        async ([reqs, departments]) => {
+          setRequests(reqs);
+          setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
+          const productList = await getProductsByIds(reqs.map((r) => r.productId));
+          setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
+          setLoading(false);
+        }
+      );
+    }, [user])
+  );
+
+  useRequestUpdates((updated) => {
+    setRequests((prev) => {
+      const exists = prev.some((r) => r.id === updated.id);
+      if (exists) return prev.map((r) => (r.id === updated.id ? updated : r));
+      return updated.departmentId === user?.departmentId ? [...prev, updated] : prev;
+    });
+  });
 
   if (loading) return <LoadingView />;
 
-  const queue = requests.filter((r) => r.status !== 'TESLIM_EDILDI');
+  const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
+  const isPartial = (r: Request) =>
+    r.fulfilledQuantity !== undefined &&
+    r.fulfilledQuantity < r.quantity &&
+    (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
+
+  const nonCancelled = requests.filter((r) => !isTerminal(r));
+
+  const queue = nonCancelled.filter((r) => {
+    if (filter === 'kismi') return isPartial(r);
+    if (filter === 'aktif') return r.status !== 'TESLIM_EDILDI' && !isPartial(r);
+    return r.status === 'TESLIM_EDILDI';
+  });
   const sortedRequests = [...queue].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  // GERÇEK sayılar — mevcut status alanından, uydurma yok.
-  const receivedCount = queue.filter((r) => r.status === 'TALEP_ALINDI').length;
-  const preparingCount = queue.filter((r) => r.status === 'HAZIRLANIYOR').length;
+  // İstatistik kutuları her zaman "aktif" kapsamına göre hesaplanır (filtreden bağımsız).
+  const activeScope = nonCancelled.filter((r) => r.status !== 'TESLIM_EDILDI');
+  const receivedCount = activeScope.filter((r) => r.status === 'TALEP_ALINDI').length;
+  const preparingCount = activeScope.filter((r) => r.status === 'HAZIRLANIYOR' && !isPartial(r)).length;
 
   return (
     <Box style={{ flex: 1 }} background="white">
@@ -95,21 +114,18 @@ export default function IncomingRequestsScreen() {
           borderBottomRightRadius: radius.lg,
         }}
       >
-        {/* Üst satır: departman adı + ikon butonlar — HomeScreen'deki Ayarlar
-            butonuyla aynı stil (mavi daire) kullanılıyor, tutarlılık için. */}
         <Stack direction="row" justify="space-between" align="center">
-            <Text variant="bodyBold" color="white" style={{ opacity: 0.85, letterSpacing: 1 , fontSize: 30}}>
+          <Text
+            variant="bodyBold"
+            color="white"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            style={{ opacity: 0.85, letterSpacing: 1, fontSize: 18, flexShrink: 1 }}
+          >
             {departmentName.toUpperCase()}
           </Text>
           <Stack direction="row" gap="sm">
-            <Pressable
-              onPress={() => navigation.navigate('MaterialRequestQueue')}
-              background="blueMedium"
-              style={{ borderRadius: 999 }}
-              accessibilityLabel="Çok kalemli talepler"
-            >
-              <Ionicons name="layers-outline" size={22} color={colors.white} />
-            </Pressable>
+            <NotificationBell />
             <Pressable
               onPress={() => navigation.navigate('Settings')}
               background="blueMedium"
@@ -121,17 +137,38 @@ export default function IncomingRequestsScreen() {
           </Stack>
         </Stack>
 
-                {/* Başlık */}
-        <Text variant="h1" color="white" style={{ marginTop: spacing.md , alignSelf: 'center', fontSize: 30}}>
+        <Text variant="h1" color="white" style={{ marginTop: spacing.md, alignSelf: 'center' }}>
           Hazırlama Kuyruğu
         </Text>
 
-        {/* Gerçek durum dağılımı — üç kutu yan yana, sahte SLA/ortalama süre
-            yerine elimizdeki gerçek status verisinden dürüst sayılar. */}
+        <Stack
+          direction="row"
+          style={{
+            marginTop: spacing.md,
+            backgroundColor: colors.blueDark,
+            borderRadius: radius.lg,
+            padding: 3,
+          }}
+        >
+          {FILTERS.map(({ key, label }) => (
+            <Pressable
+              key={key}
+              onPress={() => setFilter(key)}
+              background={filter === key ? 'white' : undefined}
+              radius="lg"
+              style={{ flex: 1, paddingVertical: 6, minHeight: undefined }}
+            >
+              <Text variant="caption" color={filter === key ? 'blue' : 'white'} style={{ fontWeight: '700' }}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </Stack>
+
         <Stack direction="row" gap="sm" style={{ marginTop: spacing.md }}>
           <StatBox value={receivedCount} label="talep alındı" />
           <StatBox value={preparingCount} label="hazırlanıyor" />
-          <StatBox value={queue.length} label="bekleyen" />
+          <StatBox value={activeScope.length} label="bekleyen" />
         </Stack>
       </Box>
 
@@ -140,18 +177,20 @@ export default function IncomingRequestsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, flexGrow: 1, gap: spacing.sm }}
         renderItem={({ item }) => {
-          const priority = getTempFakePriority(item.id);
+          const priority = item.priority;
+          const isCancelledOrRejected = item.status === 'IPTAL_EDILDI' || item.status === 'REDDEDILDI';
           return (
             <Pressable
               onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-              background="surface"
+              background={isCancelledOrRejected ? 'dangerLight' : 'surface'}
               radius="md"
               style={{
                 width: '100%',
                 padding: spacing.md,
                 alignItems: 'flex-start',
                 borderLeftWidth: 4,
-                borderLeftColor: colors[priorityColors[priority]],
+                borderLeftColor: isCancelledOrRejected ? colors.danger : colors[priorityColors[priority]],
+                opacity: isCancelledOrRejected ? 0.75 : 1,
               }}
             >
               <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
@@ -163,9 +202,12 @@ export default function IncomingRequestsScreen() {
               <Text variant="bodyBold" style={{ marginTop: spacing.sm }}>
                 {products[item.productId]}
               </Text>
+              <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
+                {item.requesterName ?? item.requesterId}
+              </Text>
               <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
                 <Text variant="caption" color="textMuted">
-                  {item.quantity} adet
+                  {isPartial(item) ? `${item.fulfilledQuantity}/${item.quantity} adet` : `${item.quantity} adet`}
                 </Text>
                 <StatusChip status={item.status} />
               </Stack>
@@ -179,7 +221,6 @@ export default function IncomingRequestsScreen() {
     </Box>
   );
 }
-
 
 function StatBox({ value, label }: { value: number; label: string }) {
   return (

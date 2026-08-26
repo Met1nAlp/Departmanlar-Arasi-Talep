@@ -3,15 +3,15 @@ import { describe, expect, it } from '@jest/globals';
 import { slaDueAt, slaProgress, isNearSla, isSlaBreached, SLA_WARNING_THRESHOLD } from '../SlaPolicy';
 
 describe('SlaPolicy', () => {
-  it('LINE_DOWN için 5 dakikalık SLA hesaplar', () => {
+    it('ACIL için 15 dakikalık SLA hesaplar', () => {
     const created = new Date('2026-08-12T10:00:00Z');
-    const due = slaDueAt(created, 'LINE_DOWN');
+    const due = slaDueAt(created, 'ACIL');
     expect(due.toISOString()).toBe('2026-08-12T10:05:00.000Z');
   });
 
   it('URGENT için 15, NORMAL için 60 dakika', () => {
     const created = new Date('2026-08-12T10:00:00Z');
-    expect(slaDueAt(created, 'URGENT').getTime() - created.getTime()).toBe(15 * 60_000);
+    expect(slaDueAt(created, 'ACIL').getTime() - created.getTime()).toBe(15 * 60_000);
     expect(slaDueAt(created, 'NORMAL').getTime() - created.getTime()).toBe(60 * 60_000);
   });
 

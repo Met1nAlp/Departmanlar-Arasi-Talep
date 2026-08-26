@@ -5,6 +5,7 @@ import { Text } from '../primitives/Text';
 import { statusTokens, colors, spacing } from '../tokens';
 import { RequestStatusKey } from '../tokens';
 import { statusOrder } from '../../utils/statusLabels';
+import { scale } from '../tokens/scale';
 
 interface Props {
   currentStatus: RequestStatusKey;
@@ -77,15 +78,15 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: scale(36),
+    height: scale(36),
+    borderRadius: scale(18),
     justifyContent: 'center',
     alignItems: 'center',
   },
   connector: {
     flex: 1,
-    height: 3,
+    height: scale(3),
     marginHorizontal: 2,
   },
   label: {

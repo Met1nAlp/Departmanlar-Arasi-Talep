@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable } from '../primitives/Pressable';
 import { Text } from '../primitives/Text';
 import { colors, spacing, radius } from '../tokens';
+import { scale } from '../tokens/scale';
 
 interface Props {
   value: string;
@@ -62,6 +63,6 @@ const styles = StyleSheet.create({
   },
   key: {
     width: '30%', // 3 sütunlu grid, gap'i telafi eden yaklaşık genişlik
-    aspectRatio: 1,
+    height: scale(64), // sabit yükseklik — aspectRatio yerine; büyük POS'ta orantısız büyümez
   },
 });

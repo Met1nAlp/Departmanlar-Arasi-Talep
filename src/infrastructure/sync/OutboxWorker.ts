@@ -38,6 +38,7 @@ function toOutboxEntry(record: OutboxRecord): OutboxEntry {
 
 export class OutboxWorker {
   private processing = false;
+  private rerunRequested = false;
 
   constructor(
     private readonly database: Database,
@@ -63,9 +64,16 @@ export class OutboxWorker {
     return clientRequestId;
   }
 
-  /** Plan §12.4 kural 5: "Uygulama açılışında outbox otomatik işlenir." */
   async processQueue(): Promise<void> {
-    if (this.processing) return; // eşzamanlı çağrılarda tekilleştir
+    if (this.processing) {
+      // Zaten bir çalışma sürüyor — bu sırada kuyruğa YENİ eklenen kayıtlar
+      // (örn. sepetten art arda birden fazla talep gönderilirken) mevcut
+      // çalışmanın başında çekilen listede yer almamış olabilir. Bu bayrak,
+      // mevcut çalışma bitince kuyruğun otomatik olarak TEKRAR taranmasını
+      // sağlar — aksi halde geç eklenen kayıtlar sessizce hiç işlenmeden kalırdı.
+      this.rerunRequested = true;
+      return;
+    }
     this.processing = true;
     try {
       const collection = this.database.get<OutboxRecord>('outbox');
@@ -81,6 +89,10 @@ export class OutboxWorker {
       await Promise.all(runnableRecords.map((record) => this.processOne(record)));
     } finally {
       this.processing = false;
+      if (this.rerunRequested) {
+        this.rerunRequested = false;
+        void this.processQueue();
+      }
     }
   }
 

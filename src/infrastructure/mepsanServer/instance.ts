@@ -53,33 +53,35 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
   });
 });
 
-// ÖNEMLİ MİMARİ DEĞİŞİKLİĞİ (NFC oturum modeline geçiş): cihaz yetkilendirmesi
-// artık KULLANICI GİRİŞİNDEN TAMAMEN BAĞIMSIZ. Cihaz, uygulama açılışında
-// (kimse giriş yapmadan ÖNCE) kendi MAC adresiyle sunucuya bağlanıp
-// yetkilendiriliyor — bu, "kayıt olmayan telefon giriş yapamaz" kuralının
-// karşılığı. Kullanıcı kimliği (kart okutma) ayrı, sonraki bir adım.
-//
-// GEÇİCİ: username alanına şimdilik deviceUid'in kendisini gönderiyoruz —
-// gerçek bir "cihaz etiketi" (örn. admin'in DeviceEnrollScreen'de girdiği
-// bir isim) gelene kadar. Sunucu tarafında bu alan sadece log/görüntüleme
-// amaçlı kullanılıyor, kimlik doğrulamayı MAC adresi + passkey sağlıyor.
+// AUTH_REQUEST'e artık gerek yok — MAC, Barış tarafından doğrudan
+// veritabanına ekleniyor (kayıt kodu/onboarding akışı yok). Sunucu, her
+// komutta mac_address'i isMacAuthorized ile kontrol ediyor; MAC tabloda
+// varsa herhangi bir komut (CARD_LOGIN dahil) zaten çalışır. Bu yüzden
+// burada sadece WebSocket bağlantısını kuruyoruz — asıl "yetkili mi değil
+// mi" sorusunun gerçek cevabı, ilk komut (CardLoginScreen'deki CARD_LOGIN)
+// gönderildiğinde sunucudan gelecek.
 export function connectMepsanServer(): void {
-  if (!isMepsanServerConfigured) return; // Sunucu adresi yapılandırılmamış — bkz. mepsanServerConfig.ts.
+  if (!isMepsanServerConfigured) {
+    useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
+    return;
+  }
+  const deviceUid = useDeviceStore.getState().deviceUid;
+  if (!deviceUid) {
+    useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
+    return;
+  }
+
+  useConnectionStore.getState().setDeviceAuthStatus('authorizing');
+
   void mepsanServerClient
     .connect()
     .then(() => {
-      const deviceUid = useDeviceStore.getState().deviceUid;
-      if (!deviceUid) return; // Cihaz henüz kayıtlı değil (bkz. deviceStore) — auth'u atla.
-      return mepsanServerClient.authenticate({
-        deviceId: deviceUid,
-        username: deviceUid,
-        passkey: MEPSAN_DEFAULT_PASSKEY,
-      });
+      // Bağlantı kuruldu — MAC yetkili mi değil mi burada henüz bilmiyoruz,
+      // ama artık CardLoginScreen'e geçebiliriz, gerçek kontrol orada olur.
+      useConnectionStore.getState().setDeviceAuthStatus('authorized');
     })
     .catch(() => {
-      // Bağlantı/authenticate hatası — connectionStore zaten DISCONNECTED/
-      // RECONNECTING durumunu üstleniyor (onStateChange), burada ekstra bir
-      // şey yapmaya gerek yok; MepsanServerClient kendi backoff'uyla dener.
+      useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
     });
 }
 

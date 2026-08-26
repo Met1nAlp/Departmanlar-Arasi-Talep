@@ -13,6 +13,7 @@ import { spacing, colors, radius } from '../../design-system/tokens';
 import { useAuthStore, useActiveUser } from '../../store/authStore';
 import { useDeviceStore } from '../../store/deviceStore';
 import { getDepartments } from '../../api/departments';
+import { scale } from '../../design-system/tokens/scale';
 
 const roleLabels: Record<string, string> = {
   saha_personeli: 'Saha Personeli',
@@ -65,14 +66,14 @@ export default function SettingsScreen() {
               onPress={() => navigation.goBack()}
               accessibilityLabel="Geri"
               background="blueMedium"
-              style={{ width: 56, height: 56, minWidth: 56, minHeight: 56, borderRadius: 999 }}
+              style={{ width: scale(56), height: scale(56), minWidth: scale(56), minHeight: scale(56), borderRadius: scale(999) }}
             >
               <Ionicons name="chevron-back" size={26} color={colors.white} />
             </Pressable>
           ) : (
             <Box
               background="blueMedium"
-              style={{ width: 56, height: 56, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: scale(56), height: scale(56), minWidth: scale(56), minHeight: scale(56), borderRadius: scale(999), alignItems: 'center', justifyContent: 'center' }}
             >
               <Ionicons name="person" size={26} color={colors.white} />
             </Box>
@@ -88,7 +89,7 @@ export default function SettingsScreen() {
         </Stack>
       </Box>
 
-      <Box padding="md" style={{ flex: 1 }}>
+            <Box padding="md" style={{ flex: 1, paddingBottom: insets.bottom + spacing.md }}>
         <Box background="surface" radius="md">
           <InfoRow label="Departman" value={departmentName || '—'} />
           <Divider />

@@ -1,11 +1,12 @@
 {
   "expo": {
-    "name": "talep-uygulamasi",
+    "name": "Mepsan MTS",
     "slug": "talep-uygulamasi",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/mepsan-logo.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -21,7 +22,8 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.NFC"
+        "android.permission.NFC",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -42,11 +44,28 @@
           "selectIdentifiers": [],
           "systemCodes": []
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/mepsan-logo.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#0057B8"
+        }
+      ],
+      "@lovesworking/watermelondb-expo-plugin-sdk-52-plus",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0057B8"
+        }
       ]
     ],
     "extra": {
       "realtimeWsUrl": "",
-      "mepsanServerUrl": "",
+      "mepsanServerUrl": "ws://192.168.151.24:1234",
       "eas": {
         "projectId": "a406fa4a-b98a-4acd-958a-d6e2ecddd8f0"
       }

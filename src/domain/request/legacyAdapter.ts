@@ -26,7 +26,7 @@ import { canAcknowledgeOrPrepare, canClose, canCreate, type PolicyContext } from
 
 // Bu tipler src/types/index.ts ile birebir aynı tutulur (import etmiyoruz ki
 // domain katmanı legacy tiplere bağımlı olmasın — sadece string literal paylaşıyoruz).
-export type LegacyStatus = 'TALEP_ALINDI' | 'HAZIRLANIYOR' | 'HAZIR' | 'YOLDA' | 'TESLIM_EDILDI';
+export type LegacyStatus = 'TALEP_ALINDI' | 'HAZIRLANIYOR' | 'HAZIR' | 'YOLDA' | 'TESLIM_EDILDI' | 'IPTAL_EDILDI' | 'REDDEDILDI';
 export type LegacyRole = 'saha_personeli' | 'departman_yetkilisi' | 'yonetici';
 
 export const LEGACY_TO_DOMAIN_STATE: Record<LegacyStatus, string> = {
@@ -35,6 +35,8 @@ export const LEGACY_TO_DOMAIN_STATE: Record<LegacyStatus, string> = {
   HAZIR: 'READY_FOR_PICKUP',
   YOLDA: 'IN_TRANSIT',
   TESLIM_EDILDI: 'DELIVERED',
+  IPTAL_EDILDI: 'CANCELLED',
+  REDDEDILDI: 'REJECTED',
 };
 
 /** Eski ekranlardaki `nextStatusMap`'in yerini alır — tek doğru kaynak burası. */
@@ -47,7 +49,7 @@ export const LEGACY_NEXT_STATUS: Partial<Record<LegacyStatus, LegacyStatus>> = {
 export const LEGACY_NEXT_ACTION_LABEL: Partial<Record<LegacyStatus, string>> = {
   TALEP_ALINDI: 'Hazırlamaya Başla',
   HAZIRLANIYOR: '"Hazır" Olarak İşaretle',
-  HAZIR: 'Elektrikli Transpalet ile Yola Çık',
+  HAZIR: 'Yola Çıkart',
 };
 
 function toDomainRole(role: LegacyRole): Role {

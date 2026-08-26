@@ -192,7 +192,7 @@ export class MepsanServerClient {
     return false;
   }
 
-  private handleMessage(raw: string): void {
+   private handleMessage(raw: string): void {
     let parsed: MepsanResponse | MepsanEventEnvelope;
     try {
       parsed = JSON.parse(raw);
@@ -207,7 +207,9 @@ export class MepsanServerClient {
 
     // Broadcast değil — sıradaki bekleyen isteğin cevabı (FIFO).
     const pending = this.pendingQueue.shift();
-    if (!pending) return; // eşleşen bekleyen istek yok (beklenmedik mesaj), yok say
+    if (!pending) {
+      return;
+    }
     clearTimeout(pending.timeout);
     pending.resolve(parsed as MepsanResponse);
   }

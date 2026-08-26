@@ -12,20 +12,17 @@ import { Button } from '../../design-system/components/Button';
 import { LoadingView } from '../../design-system/components/LoadingView';
 import { colors, spacing } from '../../design-system/tokens';
 import { getRequestById } from '../../api/requests';
-import { getMaterialRequestById } from '../../api/materialRequests';
 import { getDepartments } from '../../api/departments';
+import { scale } from '../../design-system/tokens/scale';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'RequestCreated'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'RequestCreated'>;
 
 interface Summary {
-  requestNo: string;
+  requestIds: string[];
   itemCount: number;
   totalQty: number;
   departmentName?: string;
-  // Talebi Görüntüle yalnızca eski (tek kalemli) çağrı akışı için çalışıyor —
-  // RequestTrackingScreen henüz çok kalemli MaterialRequest'i desteklemiyor.
-  trackable: boolean;
 }
 
 export default function RequestCreatedScreen() {
@@ -37,36 +34,27 @@ export default function RequestCreatedScreen() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [legacy, material, departments] = await Promise.all([
-        getRequestById(route.params.requestId),
-        getMaterialRequestById(route.params.requestId),
-        getDepartments(),
-      ]);
+      const requests = await Promise.all(
+        route.params.requestIds.map((id) => getRequestById(id))
+      );
+      const found = requests.filter((r): r is NonNullable<typeof r> => !!r);
+      if (cancelled || found.length === 0) return;
+
+      const departments = await getDepartments();
       if (cancelled) return;
 
-      if (legacy) {
-        setSummary({
-          requestNo: legacy.id,
-          itemCount: 1,
-          totalQty: legacy.quantity,
-          departmentName: departments.find((d) => d.id === legacy.departmentId)?.name,
-          trackable: true,
-        });
-      } else if (material) {
-        setSummary({
-          requestNo: material.requestNo,
-          itemCount: material.lines.length,
-          totalQty: material.lines.reduce((sum, l) => sum + l.qtyRequested, 0),
-          departmentName: departments.find((d) => d.id === material.supplierDeptId)?.name,
-          trackable: false,
-        });
-      }
+      setSummary({
+        requestIds: found.map((r) => r.id),
+        itemCount: found.length,
+        totalQty: found.reduce((sum, r) => sum + r.quantity, 0),
+        departmentName: departments.find((d) => d.id === found[0].departmentId)?.name,
+      });
     }
     load();
     return () => {
       cancelled = true;
     };
-  }, [route.params.requestId]);
+  }, [route.params.requestIds]);
 
   const goHome = () => navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] }));
 
@@ -81,12 +69,12 @@ export default function RequestCreatedScreen() {
       <Stack style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Box
           background="blue"
-          style={{ width: 72, height: 72, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: scale(72), height: scale(72), borderRadius: scale(999), alignItems: 'center', justifyContent: 'center' }}
         >
           <Ionicons name="checkmark" size={36} color={colors.white} />
         </Box>
         <Text variant="h2" style={{ marginTop: spacing.lg, textAlign: 'center' }}>
-          Talebiniz oluşturuldu
+          {summary.itemCount > 1 ? 'Talepleriniz oluşturuldu' : 'Talebiniz oluşturuldu'}
         </Text>
         <Text variant="body" color="textSecondary" style={{ marginTop: spacing.xs, textAlign: 'center' }}>
           {summary.departmentName ? `${summary.departmentName} ekibi bilgilendirildi. ` : ''}
@@ -94,7 +82,10 @@ export default function RequestCreatedScreen() {
         </Text>
 
         <Box background="surface" radius="md" style={{ width: '100%', marginTop: spacing.xl }}>
-          <SummaryRow label="Talep no" value={summary.requestNo} />
+          <SummaryRow
+            label={summary.itemCount > 1 ? 'Talep no\'ları' : 'Talep no'}
+            value={summary.requestIds.map((id) => id.toUpperCase()).join(', ')}
+          />
           <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
           <SummaryRow label="Kalem" value={`${summary.itemCount} kalem · ${summary.totalQty} adet`} />
         </Box>
@@ -102,10 +93,10 @@ export default function RequestCreatedScreen() {
 
       <Box>
         <Button label="Ana Ekrana Dön" onPress={goHome} />
-        {summary.trackable && (
+        {summary.itemCount === 1 && (
           <Button
             label="Talebi Görüntüle"
-            onPress={() => navigation.navigate('RequestTracking', { requestId: route.params.requestId })}
+            onPress={() => navigation.navigate('RequestTracking', { requestId: summary.requestIds[0] })}
             variant="secondary"
             style={{ marginTop: spacing.sm }}
           />
@@ -121,7 +112,9 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <Text variant="body" color="textSecondary">
         {label}
       </Text>
-      <Text variant="bodyBold">{value}</Text>
+      <Text variant="bodyBold" numberOfLines={2} style={{ flexShrink: 1, textAlign: 'right' }}>
+        {value}
+      </Text>
     </Stack>
   );
 }

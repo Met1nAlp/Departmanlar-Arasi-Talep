@@ -4,13 +4,10 @@ import { mockRequests } from '../mocks/requests';
 import { emitRequestStatusChanged } from './socketEvents';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 import { mepsanServerClient, fetchRequestById } from '../infrastructure/mepsanServer/instance';
-import { mapServerRequestToRequest, buildUpdateStatusPayload } from '../infrastructure/mepsanServer/mappers';
+import { mapServerRequestToRequest, buildUpdateStatusPayload, buildCancelRequestPayload, buildRejectRequestPayload, buildFulfillRequestPayload } from '../infrastructure/mepsanServer/mappers';
+import { database } from '../infrastructure/db';
+import { recordOwnStatusChange } from '../infrastructure/notifications/knownStatusStore';
 
-// Backend sözleşmesi: GET_REQUESTS { user_id, department_id }
-//
-// Sunucuya bağlı değilsek (bkz. mepsanServerConfig.ts / bağlantı henüz
-// kurulmadıysa) mockRequests'e düşüyoruz — ekranlar hiçbir zaman "kırık"
-// bir liste görmesin diye (offline-first ruhu, Plan Bölüm 7.4).
 export async function getRequests(params: { userId?: string; departmentId?: string }): Promise<Request[]> {
   try {
     const response = await mepsanServerClient.send('GET_REQUESTS', {
@@ -39,19 +36,13 @@ export async function getRequestById(id: string): Promise<Request | undefined> {
   return mockRequests.find((r) => r.id === id);
 }
 
-// Backend sözleşmesi: CREATE_REQUEST { id, requester_id, department_id, product_id, quantity, status, created_at }
-//
-// Plan Bölüm 7.4 (offline senaryosu): "Kullanıcı eylemi → Local'e yaz → UI
-// anında güncellenir (optimistic update) → Outbox worker gönderir." Bu
-// fonksiyon o akışı uyguluyor — çağrı önce yerel olarak (mockRequests)
-// oluşturulur ve ekrana hemen yansır, gerçek gönderim OutboxWorker üzerinden
-// arka planda yapılır (bkz. infrastructure/sync/instance.ts — dispatch artık
-// mepsanServerClient'a CREATE_REQUEST gönderiyor).
 export async function createRequest(input: {
   departmentId: string;
   productId: string;
   quantity: number;
   requesterId: string;
+  requesterName?: string;
+  priority: 'ACIL' | 'NORMAL';
 }): Promise<Request> {
   const newRequest: Request = {
     id: `r-${Date.now()}`,
@@ -63,50 +54,129 @@ export async function createRequest(input: {
   mockRequests.push(newRequest); // optimistic update — sunucu onayı beklenmez
   emitRequestStatusChanged(newRequest);
 
-  // Tüm talep nesnesini kuyruğa koyuyoruz (sadece input değil) — OutboxWorker'ın
-  // gerçek dispatch adımı CREATE_REQUEST komutu için id/status/createdAt'e de ihtiyaç duyuyor.
   await outboxWorker.enqueue('CREATE_REQUEST', newRequest.id, newRequest);
   await refreshPendingSyncBadge();
-  // Kuyruğu hemen işlemeyi dene (arka planda) — bağlantı yoksa OutboxWorker
-  // kendi backoff mantığıyla (Plan §12.4) daha sonra tekrar dener.
   void outboxWorker.processQueue().then(refreshPendingSyncBadge);
+  await recordOwnStatusChange(database, newRequest.id, newRequest.status);
 
   return newRequest;
 }
 
-// Backend sözleşmesi: UPDATE_REQUEST_STATUS { id, status, timestamp_field, timestamp_value }
-// Sunucu başarı cevabında veri döndürmüyor (sadece {status,message}) — bu
-// yüzden güncel talebi ayrıca GET_REQUESTS ile geri çekip döndürüyoruz.
-//
-// getRequests() ile AYNI dayanıklılık: sunucuya ulaşılamazsa (WebSocket kopuk,
-// Barış'ın sunucusu kapalı vb.) çökmek yerine mockRequests üzerinde YEREL
-// olarak güncelleyip döndürüyoruz — ekran hiçbir zaman yakalanmamış bir
-// hata görmesin diye (offline-first, Plan Bölüm 7.4). Bu, gerçek bir senkron
-// GARANTİSİ değil — sadece "uygulama çökmesin" güvence katmanı. Kalıcı,
-// güvenilir offline senkron için bu durum güncellemesinin de OutboxWorker
-// kuyruğuna alınması gerekiyor (bir sonraki adımda OutboxWorker.ts'e
-// bakınca bunu netleştireceğiz).
-// createRequest'teki AYNI offline-first desen: önce yerel güncelle, ekrana
-// hemen yansıt, gerçek gönderimi OutboxWorker'a bırak. Böylece sunucu o an
-// kapalı olsa bile talep kaybolmaz — bağlantı gelince otomatik senkronize olur.
-export async function updateRequestStatus(id: string, status: RequestStatus): Promise<Request> {
+export async function updateRequestStatus(current: Request, status: RequestStatus): Promise<Request> {
   const now = new Date().toISOString();
 
-  const local = mockRequests.find((r) => r.id === id);
-  if (!local) throw new Error('Request not found');
+  const updated: Request = {
+    ...current,
+    status,
+    preparedAt: status === 'HAZIRLANIYOR' ? now : current.preparedAt,
+    readyAt: status === 'HAZIR' ? now : current.readyAt,
+    onTheWayAt: status === 'YOLDA' ? now : current.onTheWayAt,
+    deliveredAt: status === 'TESLIM_EDILDI' ? now : current.deliveredAt,
+  };
 
-  local.status = status;
-  if (status === 'HAZIRLANIYOR') local.preparedAt = now;
-  if (status === 'HAZIR') local.readyAt = now;
-  if (status === 'YOLDA') local.onTheWayAt = now;
-  if (status === 'TESLIM_EDILDI') local.deliveredAt = now;
+  const idx = mockRequests.findIndex((r) => r.id === current.id);
+  if (idx !== -1) mockRequests[idx] = updated;
+  else mockRequests.push(updated);
 
-  emitRequestStatusChanged(local); // optimistic update — ekran hemen güncellenir
+  emitRequestStatusChanged(updated);
+  await recordOwnStatusChange(database, current.id, status);
 
-  const payload = buildUpdateStatusPayload(id, status, now);
-  await outboxWorker.enqueue('UPDATE_REQUEST_STATUS', id, payload);
+  const payload = buildUpdateStatusPayload(current.id, status, now);
+  await outboxWorker.enqueue('UPDATE_REQUEST_STATUS', current.id, payload);
+  await refreshPendingSyncBadge();
+  await outboxWorker.processQueue().then(refreshPendingSyncBadge);
+
+  return updated;
+}
+
+export async function cancelRequest(current: Request, reason: string): Promise<Request> {
+  const now = new Date().toISOString();
+
+  const updated: Request = {
+    ...current,
+    status: 'IPTAL_EDILDI',
+    cancelledAt: now,
+    cancelReason: reason,
+  };
+
+  const idx = mockRequests.findIndex((r) => r.id === current.id);
+  if (idx !== -1) mockRequests[idx] = updated;
+  else mockRequests.push(updated);
+
+  emitRequestStatusChanged(updated);
+  await recordOwnStatusChange(database, current.id, 'IPTAL_EDILDI');
+
+  const payload = buildCancelRequestPayload(current.id, reason, now);
+  await outboxWorker.enqueue('CANCEL_REQUEST', current.id, payload);
   await refreshPendingSyncBadge();
   void outboxWorker.processQueue().then(refreshPendingSyncBadge);
 
-  return local;
+  return updated;
+}
+
+export async function rejectRequest(current: Request, reason: string): Promise<Request> {
+  const now = new Date().toISOString();
+
+  const updated: Request = {
+    ...current,
+    status: 'REDDEDILDI',
+    rejectedAt: now,
+    rejectReason: reason,
+  };
+
+  const idx = mockRequests.findIndex((r) => r.id === current.id);
+  if (idx !== -1) mockRequests[idx] = updated;
+  else mockRequests.push(updated);
+
+  emitRequestStatusChanged(updated);
+
+  await recordOwnStatusChange(database, current.id, 'IPTAL_EDILDI');
+
+  const payload = buildRejectRequestPayload(current.id, reason, now);
+  await outboxWorker.enqueue('REJECT_REQUEST', current.id, payload);
+  await refreshPendingSyncBadge();
+  void outboxWorker.processQueue().then(refreshPendingSyncBadge);
+
+  return updated;
+}
+
+
+// Backend sözleşmesi: FULFILL_REQUEST { id, fulfilled_quantity, status,
+// timestamp_field, timestamp_value } — kısmi karşılama için. Aynı optimistic
+// update + outbox deseni, ama status'un yanında fulfilledQuantity da taşınır.
+export async function fulfillRequest(
+  current: Request,
+  nextStatus: RequestStatus,
+  fulfilledQuantity: number
+): Promise<Request> {
+  const now = new Date().toISOString();
+  console.log('[FULFILL] çağrıldı:', current.id, 'nextStatus:', nextStatus, 'qty:', fulfilledQuantity);
+  const updated: Request = {
+    ...current,
+    status: nextStatus,
+    fulfilledQuantity,
+    preparedAt: nextStatus === 'HAZIRLANIYOR' ? now : current.preparedAt,
+    readyAt: nextStatus === 'HAZIR' ? now : current.readyAt,
+    onTheWayAt: nextStatus === 'YOLDA' ? now : current.onTheWayAt,
+    deliveredAt: nextStatus === 'TESLIM_EDILDI' ? now : current.deliveredAt,
+  };
+
+  const idx = mockRequests.findIndex((r) => r.id === current.id);
+  if (idx !== -1) mockRequests[idx] = updated;
+  else mockRequests.push(updated);
+
+  emitRequestStatusChanged(updated);
+  await recordOwnStatusChange(database, current.id, nextStatus);
+
+  const payload = buildFulfillRequestPayload(current.id, nextStatus, fulfilledQuantity, now);
+  await outboxWorker.enqueue('FULFILL_REQUEST', current.id, payload);
+  await refreshPendingSyncBadge();
+  // Diğer offline-first işlemlerin aksine BURADA bekliyoruz (void değil) —
+  // çağıran ekran genelde işlemden hemen sonra geri navigasyon yapıp listeyi
+  // yeniliyor; sunucu cevabını beklemeden dönersek liste eski veriyi görüyordu
+  // (race condition, doğrulandı). Bağlantı yoksa processQueue zaten hemen
+  // döner (network hatası alır), bu await pratikte gecikme yaratmaz.
+  await outboxWorker.processQueue().then(refreshPendingSyncBadge);
+
+  return updated;
 }

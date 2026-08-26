@@ -11,16 +11,15 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { TextField } from '../../design-system/components/TextField';
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
-import { spacing, colors } from '../../design-system/tokens';
-import { getRequestById } from '../../api/requests';
+import { spacing, colors, radius } from '../../design-system/tokens';
+import { scale } from '../../design-system/tokens/scale';
+import { getRequestById, cancelRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { Request } from '../../types';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'CancelRequest'>;
 type Rt = RouteProp<SahaPersoneliStackParamList, 'CancelRequest'>;
 
-// Sabit neden listesi — ileride Efe'nin backend'i bunu bir enum olarak
-// tanımlayınca (RequestCancelReason gibi) buradan import edeceğiz.
-// Şimdilik ekranı kurabilmek için burada sabit tutuyoruz.
 const cancelReasons = [
   'Yanlış ürün seçtim',
   'Artık ihtiyaç yok',
@@ -33,69 +32,63 @@ export default function CancelRequestScreen() {
   const insets = useSafeAreaInsets();
   const route = useRoute<Rt>();
 
-  // Hangi neden seçili, henüz hiçbiri seçilmemişse null
   const [selectedReason, setSelectedReason] = useState<string | null>(null);
-  // Kullanıcının serbest metin olarak eklediği ek açıklama
   const [note, setNote] = useState('');
-  // Onay ekranının açık/kapalı olması
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [header, setHeader] = useState<{ requestId: string; productName: string } | null>(null);
+  const [request, setRequest] = useState<Request | null>(null);
 
-  useEffect(() => {
-    getRequestById(route.params.requestId).then(async (req) => {
-      if (!req) return;
-      const products = await getProductsByIds([req.productId]);
-      setHeader({ requestId: req.id, productName: products[0]?.name ?? '' });
-    });
-  }, [route.params.requestId]);
+useEffect(() => {
+  getRequestById(route.params.requestId).then(async (req) => {
+    if (!req) return;
+    setRequest(req);
+    const products = await getProductsByIds([req.productId]);
+    setHeader({ requestId: req.id, productName: products[0]?.name ?? '' });
+  });
+}, [route.params.requestId]);
 
-  const handleCancel = () => {
-    // ÖNEMLİ: Şu an types/index.ts içindeki RequestStatus tipinde CANCELLED
-    // durumu yok (Efe'nin E1 maddesinde 10 duruma genişletilecek). O yüzden
-    // burada gerçek bir API çağrısı YAPMIYORUZ henüz — sadece ekranı ve akışı
-    // hazırlıyoruz. Efe'nin tipleri gelince burası updateRequestStatus(id, 'CANCELLED', { reason, note })
-    // gibi bir çağrıya dönüşecek.
-    console.log('İptal edildi:', { requestId: route.params.requestId, reason: selectedReason, note });
-    setConfirmVisible(false);
-    navigation.popToTop();
-  };
+const handleCancel = async () => {
+  if (!request || !selectedReason) return;
+  const reason = note.trim() ? `${selectedReason} — ${note.trim()}` : selectedReason;
+  await cancelRequest(request, reason);
+  setConfirmVisible(false);
+  navigation.popToTop();
+};
 
   return (
     <Box style={{ flex: 1 }} background="white">
       <Box
-        background="white"
-        border
-        style={{
-          paddingTop: insets.top + spacing.md,
-          paddingHorizontal: spacing.md,
-          paddingBottom: spacing.md,
-          borderTopWidth: 0,
-          borderLeftWidth: 0,
-          borderRightWidth: 0,
-        }}
+        background="danger"
+        style={{ paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.md, paddingBottom: spacing.md }}
       >
-        <Stack direction="row" align="center" gap="md">
-          <Pressable onPress={() => navigation.goBack()} background="surface" radius="md" accessibilityLabel="Geri">
-            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+        <Stack direction="row" align="center" gap="sm">
+          <Pressable
+            onPress={() => navigation.goBack()}
+            background="dangerLight"
+            radius="md"
+            style={{ width: scale(44), height: scale(44), minWidth: scale(44), minHeight: scale(44) }}
+            accessibilityLabel="Geri"
+          >
+            <Ionicons name="chevron-back" size={20} color={colors.danger} />
           </Pressable>
           <Box>
-            <Text variant="h2">Talebi İptal Et</Text>
-            {header && (
-              <Text variant="caption" color="textMuted">
-                {header.requestId.toUpperCase()} · {header.productName}
-              </Text>
-            )}
+            <Text variant="caption" color="white" style={{ opacity: 0.8, letterSpacing: 1 }}>
+              {header ? `${header.requestId.toUpperCase()}` : ''}
+            </Text>
+            <Text variant="h2" color="white">
+              {header?.productName ?? 'Talebi İptal Et'}
+            </Text>
           </Box>
         </Stack>
       </Box>
 
       <Box style={{ flex: 1 }} padding="md">
-        <Text variant="h2">İptal nedenini seçin</Text>
-        <Text variant="body" color="textMuted" style={{ marginTop: spacing.xs, marginBottom: spacing.md }}>
+        <Text variant="bodyBold">İptal nedenini seçin</Text>
+        <Text variant="caption" color="textMuted" style={{ marginTop: 2, marginBottom: spacing.sm }}>
           Neden, depo ekibinin ekranında görünür.
         </Text>
 
-        <Stack gap="sm">
+        <Stack gap="xs">
           {cancelReasons.map((reason) => {
             const isSelected = selectedReason === reason;
             return (
@@ -106,18 +99,20 @@ export default function CancelRequestScreen() {
                 radius="md"
                 style={{
                   width: '100%',
-                  paddingHorizontal: spacing.md,
-                  justifyContent: 'flex-start',
+                  paddingHorizontal: spacing.sm,
+                  paddingVertical: spacing.xs,
+                  minHeight: scale(44),
+                  justifyContent: 'center',
                   borderWidth: isSelected ? 2 : 1,
-                  borderColor: isSelected ? colors.blue : colors.border,
+                  borderColor: isSelected ? colors.danger : colors.border,
                 }}
               >
-                <Stack direction="row" align="center" gap="md">
+                <Stack direction="row" align="center" gap="sm">
                   <Box
-                    background={isSelected ? 'blue' : 'white'}
+                    background={isSelected ? 'danger' : 'white'}
                     style={{
-                      width: 22,
-                      height: 22,
+                      width: scale(18),
+                      height: scale(18),
                       borderRadius: 999,
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -125,7 +120,7 @@ export default function CancelRequestScreen() {
                       borderColor: colors.border,
                     }}
                   >
-                    {isSelected && <Ionicons name="checkmark" size={14} color={colors.white} />}
+                    {isSelected && <Ionicons name="checkmark" size={11} color={colors.white} />}
                   </Box>
                   <Text variant="body">{reason}</Text>
                 </Stack>
@@ -134,8 +129,7 @@ export default function CancelRequestScreen() {
           })}
         </Stack>
 
-        {/* Ek açıklama alanı — zorunlu değil, kullanıcı isterse doldurur */}
-        <Box style={{ marginTop: spacing.lg }}>
+        <Box style={{ marginTop: spacing.md }}>
           <TextField
             label="Not (isteğe bağlı)"
             placeholder="Örn. yağ değişimi bir sonraki vardiyaya alındı..."
@@ -146,8 +140,7 @@ export default function CancelRequestScreen() {
         </Box>
       </Box>
 
-      {/* Butonlar, bir neden seçilmeden basılamaz — disabled kontrolü bunu sağlıyor */}
-      <Box padding="md">
+      <Box padding="md" style={{ paddingBottom: insets.bottom + spacing.md }}>
         <Button
           label="Talebi İptal Et"
           onPress={() => setConfirmVisible(true)}
@@ -162,7 +155,6 @@ export default function CancelRequestScreen() {
         />
       </Box>
 
-      {/* Son onay — geri dönüşü olmayan bir işlem olduğu için */}
       <ConfirmSheet
         visible={confirmVisible}
         title="Talebi iptal etmek istediğinize emin misiniz?"

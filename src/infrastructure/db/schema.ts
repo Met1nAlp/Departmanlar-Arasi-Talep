@@ -19,7 +19,7 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export const schema = appSchema({
-  version: 1,
+  version: 3,
   tables: [
     tableSchema({
       name: 'parts',
@@ -112,11 +112,22 @@ export const schema = appSchema({
         { name: 'occurred_at_iso', type: 'string' },
       ],
     }),
-    tableSchema({
+        tableSchema({
       name: 'kv_store',
       columns: [
-        { name: 'key', type: 'string', isIndexed: true }, // örn. "lastSeq", "catalogVersion"
+        { name: 'key', type: 'string', isIndexed: true },
         { name: 'value', type: 'string' },
+      ],
+    }),
+    tableSchema({
+      name: 'notifications',
+      columns: [
+        { name: 'request_id', type: 'string', isIndexed: true },
+        { name: 'title', type: 'string' },
+        { name: 'body', type: 'string' },
+        { name: 'is_read', type: 'boolean', isIndexed: true },
+        { name: 'created_at', type: 'number', isIndexed: true },
+        { name: 'user_id', type: 'string', isIndexed: true },
       ],
     }),
   ],

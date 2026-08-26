@@ -10,7 +10,12 @@ export const statusOrder: RequestStatus[] = [
   'TESLIM_EDILDI',
 ];
 
+// İptal/red — lineer akışın (statusOrder) parçası DEĞİL, terminal durumlar.
+// RequestStatusStrip gibi ilerleme çubukları sadece statusOrder'ı kullanmaya
+// devam eder; bunlar StatusChip/StatusBadge'de gösterilmek için ayrı tutulur.
+const terminalStatuses: RequestStatus[] = ['IPTAL_EDILDI', 'REDDEDILDI'];
+
 // Artık statusTokens'tan türetiliyor — etiket tek yerde (colors.ts) tanımlı, burada tekrar edilmiyor
 export const statusLabels: Record<RequestStatus, string> = Object.fromEntries(
-  statusOrder.map((key) => [key, statusTokens[key].label])
+  [...statusOrder, ...terminalStatuses].map((key) => [key, statusTokens[key].label])
 ) as Record<RequestStatus, string>;

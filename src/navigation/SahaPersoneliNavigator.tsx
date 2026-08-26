@@ -11,10 +11,7 @@ import DeliveryConfirmScreen from '../screens/saha-personeli/DeliveryConfirmScre
 import CancelRequestScreen from '../screens/saha-personeli/CancelRequestScreen';
 import ProductSearchScreen from '../screens/saha-personeli/ProductSearchScreen';
 import SettingsScreen from '../screens/shared/SettingsScreen';
-import PartSearchForCartScreen from '../screens/saha-personeli/PartSearchForCartScreen';
-import CartQuantityScreen from '../screens/saha-personeli/CartQuantityScreen';
-import MaterialRequestCartScreen from '../screens/saha-personeli/MaterialRequestCartScreen';
-
+import NotificationsScreen from '../screens/shared/NotificationsScreen';
 
 const Stack = createNativeStackNavigator<SahaPersoneliStackParamList>();
 
@@ -42,11 +39,9 @@ export default function SahaPersoneliNavigator() {
         options={{ headerShown: false, presentation: 'transparentModal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="CancelRequest" component={CancelRequestScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ProductSearch" component={ProductSearchScreen} options={{ title: 'Ürün Ara' }} />
-      <Stack.Screen name="PartSearchForCart" component={PartSearchForCartScreen} options={{ title: 'Parça Ara' }} />
-      <Stack.Screen name="CartQuantity" component={CartQuantityScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="MaterialRequestCart" component={MaterialRequestCartScreen} options={{ title: 'Çoklu Talep' }} />
     </Stack.Navigator>
   );
 }

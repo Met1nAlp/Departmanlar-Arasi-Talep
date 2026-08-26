@@ -81,7 +81,7 @@ export default function RequestTrackingScreen() {
             <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
               {request.id.toUpperCase()} · TALEP TAKİBİ
             </Text>
-            <Text variant="h2" color="white">
+            <Text variant="h2" color="white" numberOfLines={1} style={{ flexShrink: 1 }}>
               {productName}
             </Text>
           </Box>
@@ -89,6 +89,19 @@ export default function RequestTrackingScreen() {
       </Box>
 
       <Box padding="md" style={{ flex: 1 }}>
+        <Box background="surface" radius="md" padding="md" style={{ marginBottom: spacing.md }}>
+          <Stack direction="row" justify="space-between">
+            <Text variant="body" color="textSecondary">
+              Adet
+            </Text>
+            <Text variant="bodyBold">
+              {request.fulfilledQuantity !== undefined && request.fulfilledQuantity < request.quantity
+                ? `${request.fulfilledQuantity} / ${request.quantity} adet karşılandı`
+                : `${request.quantity} adet`}
+            </Text>
+          </Stack>
+        </Box>
+
         <Box background="surface" radius="md" padding="md">
           {statusOrder.map((status, index) => {
             const isDone = index <= currentIndex;
@@ -135,7 +148,7 @@ export default function RequestTrackingScreen() {
         </Box>
       </Box>
 
-      <Box padding="md">
+      <Box padding="md" style={{ paddingBottom: insets.bottom + spacing.md }}>
         {request.status === 'YOLDA' && allowedToConfirm && (
           <Button
             label="Ürünü Teslim Aldım"

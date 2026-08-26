@@ -28,7 +28,9 @@ export type RequestStatusKey =
   | 'HAZIRLANIYOR'
   | 'HAZIR'
   | 'YOLDA'
-  | 'TESLIM_EDILDI';
+  | 'TESLIM_EDILDI'
+  | 'IPTAL_EDILDI'
+  | 'REDDEDILDI';
 
 export type StatusToken = {
   color: string;
@@ -67,5 +69,17 @@ export const statusTokens: Record<RequestStatusKey, StatusToken> = {
     bgColor: colors.black,
     icon: 'checkmark-done-outline',
     label: 'Teslim Edildi',
+  },
+  IPTAL_EDILDI: {
+    color: colors.textSecondary,
+    bgColor: colors.border,
+    icon: 'close-circle-outline',
+    label: 'İptal Edildi',
+  },
+  REDDEDILDI: {
+    color: colors.danger,
+    bgColor: colors.dangerLight,
+    icon: 'close-circle-outline',
+    label: 'Reddedildi',
   },
 };

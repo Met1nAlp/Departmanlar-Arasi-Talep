@@ -55,10 +55,8 @@ export default function ComponentGalleryScreen() {
 
       <Section title="PriorityBadge">
         <Stack direction="row" gap="sm" wrap>
-          <PriorityBadge priority="LINE_DOWN" />
-          <PriorityBadge priority="URGENT" />
+          <PriorityBadge priority="ACIL" />
           <PriorityBadge priority="NORMAL" />
-          <PriorityBadge priority="PLANNED" />
         </Stack>
       </Section>
 

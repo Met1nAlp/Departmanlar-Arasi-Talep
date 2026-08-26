@@ -5,13 +5,11 @@ import { colors, spacing, radius } from '../tokens';
 
 // Efe'nin domain katmanındaki Priority enum'una bağlanacak (E1 maddesi).
 // Şimdilik string union olarak tanımlıyoruz, tip hazır olunca oradan import edeceğiz.
-export type Priority = 'LINE_DOWN' | 'URGENT' | 'NORMAL' | 'PLANNED';
+export type Priority = 'ACIL' | 'NORMAL';
 
 const priorityConfig: Record<Priority, { color: string; label: string }> = {
-  LINE_DOWN: { color: colors.danger, label: 'HAT DURDU' },
-  URGENT: { color: colors.warning, label: 'Acil' },
+  ACIL: { color: colors.danger, label: 'Acil' },
   NORMAL: { color: colors.blue, label: 'Normal' },
-  PLANNED: { color: colors.textMuted, label: 'Planlı' },
 };
 
 export function PriorityBadge({ priority }: { priority: Priority }) {

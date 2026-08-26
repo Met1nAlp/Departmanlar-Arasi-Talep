@@ -2,7 +2,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from '../constants/theme';
-
+import { Ionicons } from '@expo/vector-icons';
 import DashboardScreen from '../screens/yonetici/DashboardScreen';
 import AllRequestsScreen from '../screens/yonetici/AllRequestsScreen';
 import DepartmentReportsScreen from '../screens/yonetici/DepartmentReportsScreen';
@@ -26,9 +26,33 @@ function YoneticiTabs() {
         tabBarInactiveTintColor: colors.textMuted,
       }}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Özet', headerShown: false }} />
-      <Tab.Screen name="AllRequests" component={AllRequestsScreen} options={{ title: 'Tüm Talepler', headerShown: false }} />
-      <Tab.Screen name="DepartmentReports" component={DepartmentReportsScreen} options={{ title: 'Raporlar', headerShown: false }} />
+            <Tab.Screen
+        name="Dashboard"
+        component={DashboardScreen}
+        options={{
+          title: 'Özet',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="AllRequests"
+        component={AllRequestsScreen}
+        options={{
+          title: 'Tüm Talepler',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="list-outline" size={size} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="DepartmentReports"
+        component={DepartmentReportsScreen}
+        options={{
+          title: 'Raporlar',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" size={size} color={color} />,
+        }}
+      />
     </Tab.Navigator>
   );
 }

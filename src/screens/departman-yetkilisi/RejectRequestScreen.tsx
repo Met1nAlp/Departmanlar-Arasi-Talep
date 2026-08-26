@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { CommonActions, useNavigation, useRoute, RouteProp } from '@react-navigation/native';import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
 import { Box } from '../../design-system/primitives/Box';
@@ -13,8 +12,13 @@ import { Button } from '../../design-system/components/Button';
 import { TextField } from '../../design-system/components/TextField';
 import { LoadingView } from '../../design-system/components/LoadingView';
 import { spacing, colors, radius } from '../../design-system/tokens';
-import { getRequestById } from '../../api/requests';
+import { getRequestById, rejectRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { Request } from '../../types';
+import { scale } from '../../design-system/tokens/scale';
+
+
+
 
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'RejectRequest'>;
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RejectRequest'>;
@@ -39,22 +43,23 @@ export default function RejectRequestScreen() {
   const [note, setNote] = useState('');
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [summary, setSummary] = useState<{ requestId: string; productName: string; quantity: number } | null>(null);
+  const [request, setRequest] = useState<Request | null>(null);
 
   useEffect(() => {
     getRequestById(route.params.requestId).then(async (req) => {
       if (!req) return;
+      setRequest(req);
       const [product] = await getProductsByIds([req.productId]);
       setSummary({ requestId: req.id, productName: product?.name ?? '', quantity: req.quantity });
     });
   }, [route.params.requestId]);
 
-  const handleReject = () => {
-    // ÖNEMLİ: RequestStatus tipinde henüz REJECTED durumu yok (Efe'nin E1
-    // maddesi). Gerçek API çağrısı yerine şimdilik sadece konsola yazıyoruz —
-    // tipler gelince updateRequestStatus(id, 'REJECTED', { reason, note }) olacak.
-    console.log('Reddedildi:', { requestId: route.params.requestId, reason: selectedReason, note });
+  const handleReject = async () => {
+    if (!request || !selectedReason) return;
+    const reason = note.trim() ? `${selectedReason} — ${note.trim()}` : selectedReason;
+    await rejectRequest(request, reason);
     setConfirmVisible(false);
-    navigation.goBack();
+    navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'IncomingRequests' }] }));
   };
 
   if (!summary) return <LoadingView />;
@@ -109,8 +114,8 @@ export default function RejectRequestScreen() {
                   <Box
                     background={isSelected ? 'blue' : 'white'}
                     style={{
-                      width: 22,
-                      height: 22,
+                      width: scale(22),
+                      height: scale(22),
                       borderRadius: 999,
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -141,7 +146,7 @@ export default function RejectRequestScreen() {
           />
         </Box>
 
-        <Box style={{ marginTop: 'auto', paddingTop: spacing.lg }}>
+        <Box style={{ marginTop: 'auto', paddingTop: spacing.lg, paddingBottom: insets.bottom + spacing.md }}>
           <Button
             label="Talebi Reddet"
             onPress={() => setConfirmVisible(true)}
@@ -164,12 +169,12 @@ export default function RejectRequestScreen() {
             }}
           >
             <View
-              style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: colors.border, marginBottom: spacing.lg }}
+              style={{ width: scale(40), height: scale(4), borderRadius: scale(999), backgroundColor: colors.border, marginBottom: spacing.lg }}
             />
 
             <Box
               background="dangerLight"
-              style={{ width: 72, height: 72, borderRadius: 999, alignItems: 'center', justifyContent: 'center' }}
+              style={{ width: scale(72), height: scale(72), borderRadius: scale(999), alignItems: 'center', justifyContent: 'center' }}
             >
               <Ionicons name="warning" size={32} color={colors.danger} />
             </Box>

@@ -11,7 +11,6 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { spacing, colors } from '../../design-system/tokens';
-import { PRIORITY_SLA_MINUTES } from '../../contracts/types';
 import { getRequestById } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 
@@ -19,12 +18,9 @@ type Nav = NativeStackNavigationProp<YoneticiStackParamList, 'ChangePriority'>;
 type Rt = RouteProp<YoneticiStackParamList, 'ChangePriority'>;
 
 const priorityOptions: { value: Priority; description: string; slaLabel: string }[] = [
-  { value: 'LINE_DOWN', description: 'Kuyruğun başına alınır', slaLabel: `SLA ${PRIORITY_SLA_MINUTES.LINE_DOWN} dk` },
-  { value: 'URGENT', description: 'Vardiya içinde', slaLabel: `SLA ${PRIORITY_SLA_MINUTES.URGENT} dk` },
-  { value: 'NORMAL', description: 'Standart kuyruk', slaLabel: `SLA ${PRIORITY_SLA_MINUTES.NORMAL} dk` },
-  { value: 'PLANNED', description: 'Vardiya sonuna kadar', slaLabel: '' },
+  { value: 'ACIL', description: 'Kuyruğun başına alınır', slaLabel: 'SLA 15 dk' },
+  { value: 'NORMAL', description: 'Standart kuyruk', slaLabel: 'SLA 60 dk' },
 ];
-
 export default function ChangePriorityScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
@@ -133,7 +129,7 @@ export default function ChangePriorityScreen() {
         </Box>
       </Box>
 
-      <Box padding="md" style={{ paddingTop: 0 }}>
+      <Box padding="md" style={{ paddingTop: 0, paddingBottom: insets.bottom + spacing.md }}>
         <Button label="Önceliği Güncelle" onPress={handleSave} />
       </Box>
     </Box>

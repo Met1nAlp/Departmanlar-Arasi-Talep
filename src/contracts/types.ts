@@ -71,14 +71,10 @@ export const REQUEST_STATES: readonly RequestState[] = [
 /** Terminal durumlar — bu durumlardan çıkış yoktur; düzeltme için yeni çağrı açılır. */
 export const TERMINAL_STATES: readonly RequestState[] = ['CLOSED', 'CANCELLED'];
 
-export type Priority = 'LINE_DOWN' | 'URGENT' | 'NORMAL' | 'PLANNED';
-
-export const PRIORITIES: readonly Priority[] = ['LINE_DOWN', 'URGENT', 'NORMAL', 'PLANNED'];
-
-/** SLA süreleri (dakika). PLANNED için "vardiya sonu" ayrı ele alınır (bkz. SlaPolicy). */
-export const PRIORITY_SLA_MINUTES: Record<Exclude<Priority, 'PLANNED'>, number> = {
-  LINE_DOWN: 5,
-  URGENT: 15,
+export type Priority = 'ACIL' | 'NORMAL';
+export const PRIORITIES: readonly Priority[] = ['ACIL', 'NORMAL'];
+export const PRIORITY_SLA_MINUTES: Record<Priority, number> = {
+  ACIL: 15,
   NORMAL: 60,
 };
 
@@ -325,7 +321,7 @@ export interface EventEnvelope<T = unknown> {
 // 9. Idempotency / offline yardımcı tipleri (Plan Bölüm 7.4, 12.4)
 // ---------------------------------------------------------------------------
 
-export type OutboxOperation = 'CREATE_REQUEST' | 'UPDATE_REQUEST_STATUS' | 'ACKNOWLEDGE' | 'READY' | 'CLOSE' | 'CANCEL';
+export type OutboxOperation = 'CREATE_REQUEST' | 'UPDATE_REQUEST_STATUS' | 'CANCEL_REQUEST' | 'REJECT_REQUEST' | 'FULFILL_REQUEST' | 'ACKNOWLEDGE' | 'READY' | 'CLOSE' | 'CANCEL';
 export type OutboxStatus = 'QUEUED' | 'SENDING' | 'FAILED_PERMANENT';
 
 export interface OutboxEntry {

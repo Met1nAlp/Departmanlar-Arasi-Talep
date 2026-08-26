@@ -5,6 +5,7 @@ import { Text } from '../primitives/Text';
 import { Button } from './Button';
 import { Stack } from '../primitives/Stack';
 import { colors, spacing } from '../tokens';
+import { scale } from '../tokens/scale';
 
 interface Props {
   visible: boolean;
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
   },
   sheet: {
     backgroundColor: colors.white,
-    borderRadius: 16,
+    borderRadius: scale(16),
     padding: spacing.lg,
     width: '100%',
     maxWidth: 400,

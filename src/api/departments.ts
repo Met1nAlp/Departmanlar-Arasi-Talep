@@ -1,10 +1,9 @@
 // src/api/departments.ts
 import { Department } from '../types';
-import { mockDepartments } from '../mocks/departments';
-import { delay } from './delay';
+import { database } from '../infrastructure/db';
+import DepartmentModel from '../infrastructure/db/models/Department';
 
-// Backend sözleşmesi: GET /departments
 export async function getDepartments(): Promise<Department[]> {
-  await delay();
-  return mockDepartments;
+  const rows = await database.get<DepartmentModel>('departments').query().fetch();
+  return rows.map((r) => ({ id: r.code, name: r.name }));
 }

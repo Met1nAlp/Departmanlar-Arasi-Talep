@@ -1,96 +1,55 @@
 // src/store/deviceStore.ts
 //
-// Plan Bölüm 14.2 adım 1 "Cihaz kaydı (bir kez, kurulumda)". authStore'dan
-// AYRI tutulur çünkü ömrü farklıdır: yetkili/personel oturumları vardiya
-// bazlı kapanıp açılır, cihaz kaydı ise BT cihazı sıfırlayana kadar kalıcıdır
-// (bkz. secureStorage.ts'teki clearAuthSecureStorage / clearDeviceSecureStorage
-// ayrımı — yetkili çıkışı asla cihaz kaydını silmez).
+// NFC modeline geçişle birlikte "kayıt kodu" akışı KALDIRILDI. Cihaz kimliği
+// (deviceUid) hâlâ kalıcı olarak üretilip saklanıyor — MepsanServerClient'in
+// AUTH_REQUEST'te mac_address yerine kullandığı geçici kimlik bu. Yetkilendirme
+// artık burada değil, doğrudan mepsanServerClient.authenticate() ile,
+// uygulama açılışında otomatik yapılıyor (bkz. mepsanServer/instance.ts).
 
 import { create } from 'zustand';
-import { enrollDevice, AuthError } from '../api/auth';
-import {
-  getSecureItem,
-  setSecureItem,
-  SECURE_STORAGE_KEYS,
-} from '../infrastructure/security/secureStorage';
-import type { Device } from '../contracts/types';
-
-interface DeviceState {
-  deviceUid: string | null;
-  deviceToken: string | null;
-  departmentId: string | null;
-  mode: Device['mode'] | null;
-  isLoading: boolean;
-  enrollError: string | null;
-
-  hydrate: () => Promise<void>;
-  enroll: (enrollCode: string) => Promise<void>;
-  clearEnrollError: () => void;
-}
+import { getSecureItem, setSecureItem, SECURE_STORAGE_KEYS } from '../infrastructure/security/secureStorage';
 
 function generateDeviceUid(): string {
-  // MOCK — gerçek cihazda expo-device (Device.osInternalBuildId vb.) veya
-  // donanım kimliği kullanılabilir. Burada tek seferlik, kalıcı rastgele bir
-  // kimlik üretip SecureStore'a yazmak yeterli (Plan Bölüm 10.1 DEVICE.device_uid).
   return `dev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
+interface DeviceState {
+  deviceUid: string | null;
+  isLoading: boolean;
+  hydrate: () => Promise<void>;
+  /**
+   * Kullanıcının Ayarlar'dan bulup elle girdiği GERÇEK MAC adresi. Uygulama
+   * gerçek MAC'i işletim sistemi kısıtı yüzünden okuyamıyor (Android 6+/iOS
+   * hepsi engelliyor) — bu yüzden bir kereliğine elle giriliyor, kalıcı
+   * saklanıyor. Barış'ın veritabanı BÜYÜK HARF bekliyor — kullanıcı küçük
+   * de yazsa burada otomatik büyük harfe çevriliyor, format hatası riski
+   * kullanıcıya bırakılmıyor.
+   */
+  setMacAddress: (mac: string) => Promise<void>;
+  clearMacAddress: () => Promise<void>;
+}
 
-export const useDeviceStore = create<DeviceState>((set, get) => ({
+export const useDeviceStore = create<DeviceState>((set) => ({
   deviceUid: null,
-  deviceToken: null,
-  departmentId: null,
-  mode: null,
   isLoading: true,
-  enrollError: null,
 
   hydrate: async () => {
     set({ isLoading: true });
     try {
-      const [deviceUid, deviceToken, departmentId, mode] = await Promise.all([
-        getSecureItem(SECURE_STORAGE_KEYS.deviceUid),
-        getSecureItem(SECURE_STORAGE_KEYS.deviceToken),
-        getSecureItem(SECURE_STORAGE_KEYS.deviceDepartmentId),
-        getSecureItem(SECURE_STORAGE_KEYS.deviceMode),
-      ]);
-      set({
-        deviceUid,
-        deviceToken,
-        departmentId,
-        mode: mode as Device['mode'] | null,
-        isLoading: false,
-      });
+      const deviceUid = await getSecureItem(SECURE_STORAGE_KEYS.deviceUid);
+      set({ deviceUid, isLoading: false }); // null olabilir — MAC henüz girilmemiş demektir
     } catch {
       set({ isLoading: false });
     }
   },
 
-  enroll: async (enrollCode: string) => {
-    set({ enrollError: null });
-    try {
-      const deviceUid = get().deviceUid ?? generateDeviceUid();
-      const result = await enrollDevice(deviceUid, enrollCode);
-      await Promise.all([
-        setSecureItem(SECURE_STORAGE_KEYS.deviceUid, deviceUid),
-        setSecureItem(SECURE_STORAGE_KEYS.deviceToken, result.deviceToken),
-        setSecureItem(SECURE_STORAGE_KEYS.deviceDepartmentId, result.departmentId),
-        setSecureItem(SECURE_STORAGE_KEYS.deviceMode, result.mode),
-      ]);
-      set({
-        deviceUid,
-        deviceToken: result.deviceToken,
-        departmentId: result.departmentId,
-        mode: result.mode,
-      });
-    } catch (err) {
-      const message = err instanceof AuthError ? err.message : 'Cihaz kaydı başarısız. Tekrar deneyin.';
-      set({ enrollError: message });
-      throw err;
-    }
+  setMacAddress: async (mac: string) => {
+    const normalized = mac.trim().toUpperCase();
+    await setSecureItem(SECURE_STORAGE_KEYS.deviceUid, normalized);
+    set({ deviceUid: normalized });
   },
 
-  clearEnrollError: () => set({ enrollError: null }),
+  clearMacAddress: async () => {
+    await setSecureItem(SECURE_STORAGE_KEYS.deviceUid, '');
+    set({ deviceUid: null });
+  },
 }));
-
-export function useIsDeviceEnrolled(): boolean {
-  return useDeviceStore((s) => s.deviceToken !== null);
-}

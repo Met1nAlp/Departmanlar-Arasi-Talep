@@ -1,6 +1,7 @@
 // src/design-system/primitives/Pressable.tsx
 import { Pressable as RNPressable, PressableProps, ViewStyle } from 'react-native';
 import { colors, radius } from '../tokens';
+import { scale } from '../tokens/scale';
 
 interface Props extends PressableProps {
   background?: keyof typeof colors;
@@ -16,7 +17,7 @@ export function Pressable({
   background,
   radius: radiusKey,
   style,
-  minTouchSize = 64,
+  minTouchSize = Math.max(64, scale(64)), // scale() ile 64dp'yi piksele çeviriyoruz, minTouchSize parametresiyle override edilebilir
   children,
   ...rest
 }: Props) {

@@ -70,11 +70,11 @@ export default function EscalationListScreen() {
             <Ionicons name="chevron-back" size={20} color={colors.white} />
           </Pressable>
           <Box>
-            <Text variant="h1" color="white">
-              Eskalasyon Listesi
+            <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
+              {openOldestFirst.length} KAYIT · EN ESKİ ÖNCE
             </Text>
-            <Text variant="caption" color="white" style={{ opacity: 0.75, marginTop: 2 }}>
-              {openOldestFirst.length} kayıt · en eski önce
+            <Text variant="h2" color="white">
+              Eskalasyon Listesi
             </Text>
           </Box>
         </Stack>
@@ -85,22 +85,31 @@ export default function EscalationListScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, flexGrow: 1, gap: spacing.sm }}
         renderItem={({ item }) => (
-          <Box background="surface" radius="md" padding="md">
+          <Box
+            background="surface"
+            radius="md"
+            padding="md"
+            style={{ borderLeftWidth: 4, borderLeftColor: colors.warning }}
+          >
             <Stack direction="row" justify="space-between" align="center">
-              <Text variant="bodyBold" style={{ flex: 1 }}>
-                {products[item.productId]}
-              </Text>
-              <StatusChip status={item.status} />
-            </Stack>
-            <Stack direction="row" justify="space-between" align="center" style={{ marginTop: spacing.xs }}>
               <PriorityBadge priority={FAKE_PRIORITY} />
               <Text variant="caption" color="textMuted">
-                {item.id.toUpperCase()} · {item.quantity} adet
+                {item.id.toUpperCase()}
               </Text>
+            </Stack>
+            <Text variant="bodyBold" style={{ marginTop: spacing.sm }}>
+              {products[item.productId]}
+            </Text>
+            <Stack direction="row" justify="space-between" align="center" style={{ marginTop: spacing.xs }}>
+              <Text variant="caption" color="textMuted">
+                {item.quantity} adet
+              </Text>
+              <StatusChip status={item.status} />
             </Stack>
             <Button
               label="Önceliği Değiştir"
               onPress={() => navigation.navigate('ChangePriority', { requestId: item.id })}
+              variant="secondary"
               style={{ marginTop: spacing.md }}
             />
           </Box>

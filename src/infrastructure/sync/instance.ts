@@ -4,16 +4,11 @@
 // aynı desen — bkz. infrastructure/realtime/instance.ts).
 //
 // `dispatch`, entry.operation'a göre gerçek mepsanServerClient çağrılarına
-// yönlendiriyor — OutboxWorker'ın kendisi ve onu çağıran ekranlar (api/requests.ts
-// hariç) hiç değişmedi. Şu an sadece CREATE_REQUEST enqueue ediliyor (bkz.
-// api/requests.ts); ACKNOWLEDGE/READY/CLOSE/CANCEL operasyonlarının backend'de
-// karşılığı yok (databasemanager.h'de fonksiyonlar var ama serverhandler.cpp'de
-// bağlı komut yok — bkz. Barış'a gönderilecek liste), o yüzden onlar için
-// kalıcı hata döndürüyoruz.
-//
-// İstisna fırlatırsa (bağlı değil / timeout) OutboxWorker zaten kendi catch'inde
-// bunu statusCode:0 "Ağ hatası" olarak ele alıp backoff ile yeniden dener —
-// burada ayrıca try/catch'e gerek yok.
+// yönlendiriyor. CREATE_REQUEST, UPDATE_REQUEST_STATUS, CANCEL_REQUEST ve
+// REJECT_REQUEST artık gerçek sunucu komutlarına bağlı (Barış'ın API
+// dokümanı, 2026-08-21). Eski legacy isimler (ACKNOWLEDGE/READY/CLOSE/CANCEL —
+// Efe'nin 14 durumlu modelinden kalma, gerçek protokolle örtüşmüyor) hâlâ
+// backend'de karşılığı olmadığı için kalıcı hata döndürülüyor.
 
 import { database } from '../db';
 import { OutboxWorker, type Dispatch } from './OutboxWorker';
@@ -44,12 +39,55 @@ const dispatch: Dispatch = async (entry) => {
     return { ok: false, statusCode: 422, message: response.message ?? 'UPDATE_REQUEST_STATUS reddedildi' };
   }
 
-  // Backend'de henüz karşılığı olmayan diğer operasyonlar (ACKNOWLEDGE,
+  if (entry.operation === 'CANCEL_REQUEST') {
+    const response = await mepsanServerClient.send(
+      'CANCEL_REQUEST',
+      entry.payload as Record<string, unknown>
+    );
+    if (response.status === 'ok') return { ok: true };
+    return { ok: false, statusCode: 422, message: response.message ?? 'CANCEL_REQUEST reddedildi' };
+  }
+
+  if (entry.operation === 'REJECT_REQUEST') {
+    const response = await mepsanServerClient.send(
+      'REJECT_REQUEST',
+      entry.payload as Record<string, unknown>
+    );
+    if (response.status === 'ok') return { ok: true };
+    return { ok: false, statusCode: 422, message: response.message ?? 'REJECT_REQUEST reddedildi' };
+  }
+
+  if (entry.operation === 'FULFILL_REQUEST') {
+    console.log('[FULFILL] sunucuya gönderiliyor:', JSON.stringify(entry.payload));
+    const response = await mepsanServerClient.send(
+      'FULFILL_REQUEST',
+      entry.payload as Record<string, unknown>
+    );
+    console.log('[FULFILL] sunucu cevabı:', JSON.stringify(response));
+    if (response.status === 'ok') return { ok: true };
+    return { ok: false, statusCode: 422, message: response.message ?? 'FULFILL_REQUEST reddedildi' };
+  }
+  
+  // Backend'de henüz karşılığı olmayan legacy operasyonlar (ACKNOWLEDGE,
   // CLOSE, CANCEL vb.) — tekrar denemenin anlamı yok, kalıcı hata say.
   return { ok: false, statusCode: 501, message: `"${entry.operation}" backend'de henüz desteklenmiyor` };
 };
 
+
+
 export const outboxWorker = new OutboxWorker(database, dispatch);
+
+// KRİTİK: WebSocket kendi kendine yeniden bağlanabiliyor (backoff ile) ama
+// bu, outbox kuyruğunu OTOMATİK boşaltmıyor — bağlantı koptuktan sonra
+// tekrar kurulduğunda, kullanıcı başka bir işlem yapmadıkça ya da uygulamayı
+// yeniden başlatmadıkça, offline'ken oluşturulan talepler sonsuza kadar
+// kuyrukta bekleyip hiç gönderilmeyebiliyordu. Bu abonelik, bağlantı her
+// CONNECTED olduğunda kuyruğu otomatik işlemeyi dener.
+mepsanServerClient.onStateChange((state) => {
+  if (state === 'CONNECTED') {
+    void outboxWorker.processQueue().then(refreshPendingSyncBadge);
+  }
+});
 
 /** Plan §12.4 kural 6: ConnectionBanner'daki "Senkronize edilecek: N" rozetini günceller. */
 export async function refreshPendingSyncBadge(): Promise<void> {

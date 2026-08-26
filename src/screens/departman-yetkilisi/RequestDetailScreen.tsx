@@ -1,6 +1,6 @@
 // src/screens/departman-yetkilisi/RequestDetailScreen.tsx
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { DepartmanYetkilisiStackParamList } from '../../navigation/types';
@@ -12,13 +12,14 @@ import { Stack } from '../../design-system/primitives/Stack';
 import { Text } from '../../design-system/primitives/Text';
 import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
+import { NumericKeypad } from '../../design-system/components/NumericKeypad';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
 import { RequestStatusStrip } from '../../design-system/components/RequestStatusStrip';
 import { LoadingView } from '../../design-system/components/LoadingView';
-import { colors, spacing } from '../../design-system/tokens';
+import { colors, spacing, radius } from '../../design-system/tokens';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
-import { getRequestById, updateRequestStatus } from '../../api/requests';
+import { getRequestById, updateRequestStatus, fulfillRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { useActiveUser } from '../../store/authStore';
 import {
@@ -27,19 +28,15 @@ import {
   canAdvanceLegacyStatus,
 } from '../../domain/request/legacyAdapter';
 
-// Durum geçişleri ve etiketleri artık domain/request/legacyAdapter.ts içinde
-// tek doğru kaynak olarak tutuluyor (Plan Bölüm 6.3 RBAC + Bölüm 7.1 durum
-// makinesiyle hizalı). Bu ekran o katmandan okur — kendi kuralını icat etmez.
-
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
 type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'RequestDetail'>;
 
-// Sadece "Hazır" ve sonraki adımlar onay ister — departmanı taahhüt altına
-// sokan kritik geçişler bunlar. "Hazırlamaya Başla" geri dönüşü kolay olduğu için onaysız.
 const stepsRequiringConfirm: RequestStatus[] = ['HAZIRLANIYOR', 'HAZIR'];
 
-// GEÇİCİ: gerçek priority alanı Request tipinde henüz yok (Efe'nin E1 maddesi) —
-// IncomingRequestsScreen'deki aynı yer tutucuyla tutarlı.
+// Kısmi karşılama sadece bu iki adımda anlamlı — sonraki adımlarda
+// (YOLDA, TESLIM_EDILDI) zaten miktar tartışması bitmiş olur.
+const stepsAllowingPartial: RequestStatus[] = ['TALEP_ALINDI', 'HAZIRLANIYOR'];
+
 const FAKE_PRIORITY: Priority = 'NORMAL';
 
 export default function RequestDetailScreen() {
@@ -51,6 +48,8 @@ export default function RequestDetailScreen() {
   const [productName, setProductName] = useState('');
   const [updating, setUpdating] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
+  const [partialModalVisible, setPartialModalVisible] = useState(false);
+  const [partialQty, setPartialQty] = useState('');
 
   useEffect(() => {
     getRequestById(route.params.requestId).then(async (req) => {
@@ -80,19 +79,36 @@ export default function RequestDetailScreen() {
 
     setConfirmVisible(false);
     setUpdating(true);
-    const updated = await updateRequestStatus(request.id, next);
-    setRequest(updated);
+    await updateRequestStatus(request, next);
     setUpdating(false);
+    navigation.goBack();
+  };
+
+  const openPartialModal = () => {
+    setPartialQty('');
+    setPartialModalVisible(true);
+  };
+
+  const performPartialFulfill = async () => {
+    if (!request) return;
+    const next = nextStatusMap[request.status];
+    if (!next) return;
+    const qty = Number(partialQty);
+    if (!qty || qty <= 0 || qty >= request.quantity) return;
+
+    setPartialModalVisible(false);
+    setUpdating(true);
+    await fulfillRequest(request, next, qty);
+    setUpdating(false);
+    navigation.goBack();
   };
 
   if (!request) return <LoadingView />;
 
   const next = nextStatusMap[request.status];
-  // RBAC: Plan Bölüm 6.3'e göre "Hazırlandı onayı" yalnızca SUPPLIER+ yapabilir.
-  // Rol kontrolü ekranda değil RequestPolicies üzerinden (bkz. legacyAdapter).
   const allowedToAdvance = user ? canAdvanceLegacyStatus(user.role) : false;
   const currentIndex = statusOrder.indexOf(request.status);
-
+ const showPartialOption = next && allowedToAdvance && stepsAllowingPartial.includes(request.status);
   return (
     <Box style={{ flex: 1 }} background="white">
       <Box
@@ -107,7 +123,7 @@ export default function RequestDetailScreen() {
             <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
               {request.id.toUpperCase()} · {FAKE_PRIORITY}
             </Text>
-            <Text variant="h2" color="white">
+            <Text variant="h2" color="white" numberOfLines={1} style={{ flexShrink: 1 }}>
               {productName}
             </Text>
           </Box>
@@ -129,17 +145,33 @@ export default function RequestDetailScreen() {
 
         <Box background="surface" radius="md" style={{ marginTop: spacing.md }}>
           <DetailRow label="Adet" value={`${request.quantity} adet`} />
+          {request.fulfilledQuantity !== undefined && request.fulfilledQuantity < request.quantity && (
+            <>
+              <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
+              <DetailRow label="Karşılanan" value={`${request.fulfilledQuantity} / ${request.quantity} adet`} />
+            </>
+          )}
         </Box>
 
         {next && allowedToAdvance ? (
-          <View style={{ marginTop: 'auto' }}>
+          <View style={{ marginTop: 'auto', paddingBottom: insets.bottom }}>
             <Button label={nextActionLabel[request.status]!} onPress={handleAdvancePress} loading={updating} />
-            <Button
-              label="Bu Talebi Reddet"
-              onPress={() => navigation.navigate('RejectRequest', { requestId: request.id })}
-              variant="dangerOutline"
-              style={{ marginTop: spacing.sm }}
-            />
+            {showPartialOption && (
+              <Button
+                label="Kısmi Karşıla"
+                onPress={openPartialModal}
+                variant="secondary"
+                style={{ marginTop: spacing.sm }}
+              />
+            )}
+            {request.status === 'TALEP_ALINDI' && (
+              <Button
+                label="Bu Talebi Reddet"
+                onPress={() => navigation.navigate('RejectRequest', { requestId: request.id })}
+                variant="dangerOutline"
+                style={{ marginTop: spacing.sm }}
+              />
+            )}
           </View>
         ) : (
           <Text variant="body" color="textMuted" style={{ marginTop: spacing.lg }}>
@@ -156,6 +188,53 @@ export default function RequestDetailScreen() {
         onConfirm={performAdvance}
         onCancel={() => setConfirmVisible(false)}
       />
+
+      <Modal
+        visible={partialModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPartialModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <Box
+            background="white"
+            style={{
+              padding: spacing.lg,
+              paddingBottom: insets.bottom + spacing.lg,
+              borderTopLeftRadius: radius.lg,
+              borderTopRightRadius: radius.lg,
+              alignItems: 'center',
+            }}
+          >
+            <View
+              style={{ width: 40, height: 4, borderRadius: 999, backgroundColor: colors.border, marginBottom: spacing.lg }}
+            />
+            <Text variant="h2" style={{ textAlign: 'center' }}>
+              Kaç adet karşılayabiliyorsunuz?
+            </Text>
+            <Text variant="caption" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.xs, marginBottom: spacing.md }}>
+              İstenen {request.quantity} adet · kalan kısım için talep açık kalır
+            </Text>
+            <Text variant="h1" color="blue" style={{ textAlign: 'center', marginBottom: spacing.md, minHeight: 40 }}>
+              {partialQty || '0'}
+            </Text>
+            <NumericKeypad value={partialQty} onChange={setPartialQty} maxLength={4} />
+            <Stack style={{ width: '100%', marginTop: spacing.lg }}>
+              <Button
+                label="Onayla"
+                onPress={performPartialFulfill}
+                disabled={!partialQty || Number(partialQty) <= 0 || Number(partialQty) >= request.quantity}
+              />
+              <Button
+                label="Vazgeç"
+                onPress={() => setPartialModalVisible(false)}
+                variant="secondary"
+                style={{ marginTop: spacing.sm }}
+              />
+            </Stack>
+          </Box>
+        </View>
+      </Modal>
     </Box>
   );
 }

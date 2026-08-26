@@ -1,23 +1,26 @@
 import { Product } from "../types";
 
 export type AuthStackParamList = {
-  DeviceEnroll: undefined;
+  Welcome: undefined;
   CardLogin: undefined;
+  DeviceUnauthorized: undefined;
 };
 
 export type SahaPersoneliStackParamList = {
   Home: undefined;
   DepartmentSelect: undefined;
-  ProductSearch: { departmentId: string };
-  QRScan: { departmentId: string; preselectedProduct?: Product };
-  RequestCreated: { requestId: string };
+  ProductSearch: { departmentId: string; priority: 'ACIL' | 'NORMAL' };
+  QRScan: { departmentId: string; priority: 'ACIL' | 'NORMAL'; preselectedProduct?: Product };
+  // Sepet mantığı: birden fazla ürün tek departmandan ayrı ayrı CREATE_REQUEST
+  // olarak gönderilir (backend çok satırlı talep desteklemiyor). requestIds
+  // her satırın kendi talep id'sini taşır.
+  RequestCreated: { requestIds: string[] };
   RequestTracking: { requestId: string };
   DeliveryConfirm: { requestId: string };
   CancelRequest: { requestId: string };
   Settings: undefined;
-  PartSearchForCart: undefined;
-  CartQuantity: { productId: string; productName: string; qrCode: string };
-  MaterialRequestCart: undefined;
+  Notifications: undefined;
+  
 };
 
 export type DepartmanYetkilisiStackParamList = {
@@ -25,10 +28,7 @@ export type DepartmanYetkilisiStackParamList = {
   RequestDetail: { requestId: string };
   RejectRequest: { requestId: string };
   Settings: undefined;
-  MaterialRequestQueue: undefined;
-  PartialFulfillment: { requestId: string };
-  ContainerSelect: { requestId: string };
-  SerialCapture: { lineId: string; qty: number; requestNo?: string; productName?: string };
+  Notifications: undefined;
 };
 
 export type YoneticiStackParamList = {
