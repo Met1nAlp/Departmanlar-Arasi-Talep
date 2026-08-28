@@ -1,14 +1,9 @@
 // src/api/products.ts
 //
-// GET_PARTS komutu Barış'ın sunucusunda hazır (2026-08-22). Diğer offline-first
-// API'lerle (requests.ts) aynı desen: önce gerçek sunucuya sor, ulaşılamazsa
-// WatermelonDB'deki yerel katalog önbelleğine düş.
-//
-// GÜNCELLEME: Sunucudan başarılı bir GET_PARTS cevabı geldiğinde, ürünler
-// artık yerel `parts`/`part_barcodes` tablolarına da UPSERT ediliyor (varsa
-// güncellenir, yoksa oluşturulur). Böylece internet kesildiğinde gösterilen
-// "yerel yedek" artık mocks/catalog.ts'teki sahte veri değil, en son
-// sunucudan görülen GERÇEK ürünler oluyor.
+// Departman seçim ekranı kaldırıldı (2026-08-26) — artık ürün önce seçiliyor
+// (QR okutarak ya da arayarak), departman bilgisi ürünün kendi departmentId
+// alanından geliyor. getProductsByDepartment() yerine tüm ürünleri dönen
+// getAllProducts() kullanılıyor.
 
 import { Q } from '@nozbe/watermelondb';
 import { Product } from '../types';
@@ -31,12 +26,6 @@ async function mapLocalPartToProduct(part: PartModel): Promise<Product> {
   };
 }
 
-/**
- * Sunucudan gelen ürünleri yerel kataloğa yazar (upsert). Product.id şu an
- * qrCode ile aynı (sunucu ayrı bir id alanı göndermiyor, bkz. mappers.ts).
- * Part.id'yi de aynı değerle sabitliyoruz ki getProductByQrCode'daki
- * part_barcodes eşlemesi çalışmaya devam etsin.
- */
 async function upsertProductsLocally(products: Product[]): Promise<void> {
   if (!products.length) return;
 
@@ -111,9 +100,6 @@ export async function getProductByQrCode(qrCode: string): Promise<Product | unde
   return mapLocalPartToProduct(part);
 }
 
-// Backend sözleşmesi: GET_PARTS { department: "" } — id listesiyle sorgu
-// desteklenmiyor, bu yüzden tüm ürünleri çekip id'ye göre client tarafında
-// filtreliyoruz (GET_REQUESTS'teki "boş filtre = tümü" mantığıyla tutarlı).
 export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   if (!ids.length) return [];
   try {
@@ -130,18 +116,18 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   }
 }
 
-export async function getProductsByDepartment(departmentId: string): Promise<Product[]> {
+/** Departman filtresi olmadan TÜM ürünleri döner — manuel arama ekranı için. */
+export async function getAllProducts(): Promise<Product[]> {
   try {
-    const response = await mepsanServerClient.send('GET_PARTS', { department: departmentId });
+    const response = await mepsanServerClient.send('GET_PARTS', { department: '' });
     if (response.status !== 'ok') throw new Error(response.message ?? 'GET_PARTS başarısız');
     const data = Array.isArray(response.data) ? response.data : [];
     const mapped = data.map((raw) => mapServerPartToProduct(raw as Record<string, unknown>));
-    const filtered = mapped.filter((p) => p.departmentId === departmentId);
-    void upsertProductsLocally(filtered);
-    return filtered;
+    void upsertProductsLocally(mapped);
+    return mapped;
   } catch {
     const partsCol = database.get<PartModel>('parts');
-    const parts = await partsCol.query(Q.where('default_supplier_dept_id', departmentId)).fetch();
+    const parts = await partsCol.query().fetch();
     return Promise.all(parts.map(mapLocalPartToProduct));
   }
 }

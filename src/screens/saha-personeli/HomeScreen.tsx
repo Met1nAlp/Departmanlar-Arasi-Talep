@@ -1,19 +1,28 @@
 // src/screens/saha-personeli/HomeScreen.tsx
-import { useCallback, useState } from 'react';
-import { FlatList, ScrollView } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Easing,
+  FlatList,
+  Modal,
+  RefreshControl,
+  Pressable as RNPressable,
+  ScrollView,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { SahaPersoneliStackParamList } from '../../navigation/types';
 import { Request, Department } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
 import { Pressable } from '../../design-system/primitives/Pressable';
 import { Text } from '../../design-system/primitives/Text';
-import { LoadingView } from '../../design-system/components/LoadingView';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { ErrorView } from '../../design-system/components/ErrorView';
 import { colors, spacing, radius } from '../../design-system/tokens';
+import { scale } from '../../design-system/tokens/scale';
 import RequestCard from '../../components/RequestCard';
 import { getRequests } from '../../api/requests';
 import { useRequestUpdates } from '../../hooks/useRequestUpdates';
@@ -21,24 +30,109 @@ import { getProductsByIds } from '../../api/products';
 import { getDepartments } from '../../api/departments';
 import { useActiveUser } from '../../store/authStore';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useCartStore } from '../../store/cartStore';
 import { canCreateLegacyRequest } from '../../domain/request/legacyAdapter';
-import { Ionicons } from '@expo/vector-icons';
 import { NotificationBell } from '../../design-system/components/NotificationBell';
 
 type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
 
-type Filter = 'aktif' | 'kismi' | 'tamamlanan';
+type Filter = 'aktif' | 'tamamlanan';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'aktif', label: 'Aktif' },
-  { key: 'kismi', label: 'Kısmi' },
   { key: 'tamamlanan', label: 'Tamamlanan' },
 ];
 
-// Departman adının ilk kelimesini çip etiketi olarak kullanır — "Elektronik
-// Üretim" -> "Elektronik" gibi, çipler dar kalsın diye.
-function shortDeptLabel(name: string): string {
-  return name.split(' ')[0];
+const FAB_HEIGHT = scale(52);
+
+// Senkron şeridi için amber tonları. Kalıcı olarak kullanılacaklarından
+// tokens/colors içine `warningSurface` / `warningText` olarak taşınmalı.
+const SYNC_BANNER_BG = 'rgba(239, 159, 39, 0.14)';
+const SYNC_BANNER_TEXT = '#633806';
+
+const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
+
+const isPartial = (r: Request) =>
+  r.fulfilledQuantity !== undefined &&
+  r.fulfilledQuantity > 0 &&
+  r.fulfilledQuantity < r.quantity &&
+  (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
+
+// Liste "en yeni" değil "eyleme geçebileceğim" sırasına göre diziliyor.
+// Hazır olan talep gidip alınacak olandır; listenin en üstünde durmalı.
+const STATUS_WEIGHT: Record<string, number> = {
+  HAZIR: 0,
+  HAZIRLANIYOR: 20,
+  ONAY_BEKLIYOR: 30,
+  BEKLEMEDE: 30,
+};
+
+function sortWeight(r: Request): number {
+  if (r.status === 'HAZIR') return 0;
+  if (isPartial(r)) return 10;
+  return STATUS_WEIGHT[r.status] ?? 40;
+}
+
+function SkeletonCard({ opacity }: { opacity: Animated.AnimatedInterpolation<number> }) {
+  return (
+    <Animated.View style={{ opacity }}>
+      <Box background="surface" radius="md" padding="md" style={{ height: scale(92) }}>
+        <Box
+          style={{
+            width: '55%',
+            height: scale(14),
+            borderRadius: radius.sm,
+            backgroundColor: colors.border,
+          }}
+        />
+        <Box
+          style={{
+            width: '35%',
+            height: scale(11),
+            borderRadius: radius.sm,
+            backgroundColor: colors.border,
+            marginTop: spacing.sm,
+            opacity: 0.7,
+          }}
+        />
+      </Box>
+    </Animated.View>
+  );
+}
+
+function SkeletonList() {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.9] });
+
+  return (
+    <Stack gap="sm" style={{ padding: spacing.md }}>
+      <SkeletonCard opacity={opacity} />
+      <SkeletonCard opacity={opacity} />
+      <SkeletonCard opacity={opacity} />
+    </Stack>
+  );
 }
 
 export default function HomeScreen() {
@@ -49,51 +143,61 @@ export default function HomeScreen() {
   const [requests, setRequests] = useState<Request[]>([]);
   const [products, setProducts] = useState<Record<string, string>>({});
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState<Filter>('aktif');
   const [deptFilter, setDeptFilter] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const hasLoadedOnce = useRef(false);
 
-  const loadRequests = useCallback(() => {
-    if (!user) return;
-    setLoading(true);
-    setLoadError(false);
-    Promise.all([getRequests({ userId: user.id }), getDepartments()])
-      .then(async ([reqs, deps]) => {
+  const loadRequests = useCallback(
+    async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
+      if (!user) return;
+      if (mode === 'initial') setInitialLoading(true);
+      if (mode === 'refresh') setRefreshing(true);
+      setLoadError(false);
+      try {
+        const [reqs, deps] = await Promise.all([getRequests({ userId: user.id }), getDepartments()]);
         setRequests(reqs);
         setDepartments(deps);
         const productList = await getProductsByIds(reqs.map((r) => r.productId));
-        const nameMap = Object.fromEntries(productList.map((p) => [p.id, p.name]));
-        setProducts(nameMap);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-        setLoadError(true);
-      });
-  }, [user]);
+        setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
+        hasLoadedOnce.current = true;
+      } catch {
+        // Elimizde veri varsa ekranı boşaltmıyoruz — sessiz yenileme başarısız
+        // olduğunda kullanıcı eski listeyle çalışmaya devam edebilir.
+        if (!hasLoadedOnce.current) setLoadError(true);
+      } finally {
+        setInitialLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadRequests();
+      // İlk açılış iskelet gösterir; sonraki odaklanmalar ekranı yanıp
+      // söndürmeden arka planda tazeler.
+      loadRequests(hasLoadedOnce.current ? 'silent' : 'initial');
     }, [loadRequests])
   );
 
-  // Sunucudan gelen REQUEST_STATUS_UPDATED broadcast'i anlık günceller —
-  // kullanıcı ekranı yeniden açmasa bile durum değişikliği hemen görünür.
   useRequestUpdates((updated) => {
     setRequests((prev) => {
       const exists = prev.some((r) => r.id === updated.id);
       if (exists) {
         return prev.map((r) => (r.id === updated.id ? updated : r));
       }
-      // Bu kullanıcıya ait yeni bir talep mi, kontrol et (başka kullanıcının
-      // talebi gelmişse eklemeyelim).
       return updated.requesterId === user?.id ? [...prev, updated] : prev;
     });
   });
 
-  if (loading) return <LoadingView />;
+  const handleNewRequest = () => {
+    useCartStore.getState().clear();
+    navigation.navigate('QRScan', {});
+  };
 
   if (loadError) {
     return (
@@ -102,7 +206,7 @@ export default function HomeScreen() {
           icon="cloud-offline-outline"
           title="Talepler yüklenemedi"
           message="Bağlantı geldiğinde otomatik olarak gönderilecek — veri kaybı olmaz."
-          onRetry={loadRequests}
+          onRetry={() => loadRequests('initial')}
           secondaryLabel="Çevrimdışı Devam Et"
           onSecondary={() => setLoadError(false)}
           extra={
@@ -127,20 +231,25 @@ export default function HomeScreen() {
     );
   }
 
-  const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
-  const nonCancelled = requests.filter((r) => !isTerminal(r));
-  const activeCount = nonCancelled.filter((r) => r.status !== 'TESLIM_EDILDI').length;
-  const isPartial = (r: Request) =>
-    r.fulfilledQuantity !== undefined &&
-    r.fulfilledQuantity < r.quantity &&
-    (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
+  const scoped = requests.filter(
+    (r) => !isTerminal(r) && (!deptFilter || r.departmentId === deptFilter)
+  );
+  const activeCount = scoped.filter((r) => r.status !== 'TESLIM_EDILDI').length;
+  const doneCount = scoped.length - activeCount;
 
-  const visibleRequests = nonCancelled.filter((r) => {
-    if (filter === 'kismi') return isPartial(r);
-    if (filter === 'aktif') return r.status !== 'TESLIM_EDILDI' && !isPartial(r);
-    return r.status === 'TESLIM_EDILDI';
-  })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const visibleRequests = scoped
+    .filter((r) => (filter === 'aktif' ? r.status !== 'TESLIM_EDILDI' : r.status === 'TESLIM_EDILDI'))
+    .sort((a, b) => {
+      if (filter === 'tamamlanan') {
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      }
+      const weightDiff = sortWeight(a) - sortWeight(b);
+      if (weightDiff !== 0) return weightDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  const activeDept = departments.find((d) => d.id === deptFilter);
+  const listBottomPadding = insets.bottom + spacing.lg + FAB_HEIGHT + spacing.md;
 
   return (
     <Box style={{ flex: 1 }} background="white">
@@ -155,132 +264,253 @@ export default function HomeScreen() {
         }}
       >
         <Stack direction="row" justify="space-between" align="center">
-          <Text variant="h1" color="white">
-            Taleplerim
-          </Text>
+          <Box style={{ flexShrink: 1 }}>
+            <Text variant="h1" color="white">
+              Taleplerim
+            </Text>
+            <Text variant="caption" color="blueLight" style={{ marginTop: 2 }}>
+              {user?.name} · {activeCount} aktif
+            </Text>
+          </Box>
           <Stack direction="row" gap="sm">
             <NotificationBell />
             <Pressable
               onPress={() => navigation.navigate('Settings')}
               background="blueMedium"
-              style={{ borderRadius: 999 }}
+              style={{ borderRadius: 999, width: scale(38), height: scale(38), minWidth: scale(38), minHeight: scale(38) }}
               accessibilityLabel="Ayarlar"
             >
-              <Ionicons name="settings-outline" size={22} color={colors.white} />
+              <Ionicons name="settings-outline" size={scale(18)} color={colors.white} />
             </Pressable>
           </Stack>
         </Stack>
-        <Text variant="body" color="blueLight" style={{ marginTop: spacing.xs }}>
-          {user?.name} · {activeCount} aktif talep
-        </Text>
 
-        {/* Aktif/Tamamlanan sekmesi — küçültülmüş, sadece 2 seçenek */}
-        <Stack
-          direction="row"
-          style={{
-            marginTop: spacing.md,
-            backgroundColor: colors.blueDark,
-            borderRadius: radius.lg,
-            padding: 3,
-          }}
-        >
-          {FILTERS.map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setFilter(key)}
-              background={filter === key ? 'white' : undefined}
-              radius="lg"
-              style={{ flex: 1, paddingVertical: 6, minHeight: undefined }}
-            >
-              <Text variant="caption" color={filter === key ? 'blue' : 'white'} style={{ fontWeight: '700' }}>
-                {label}
-              </Text>
-            </Pressable>
-          ))}
+        <Stack direction="row" gap="sm" align="center" style={{ marginTop: spacing.sm }}>
+          <Stack
+            direction="row"
+            style={{
+              flex: 1,
+              backgroundColor: colors.blueDark,
+              borderRadius: radius.lg,
+              padding: 3,
+            }}
+          >
+            {FILTERS.map(({ key, label }) => {
+              const selected = filter === key;
+              const count = key === 'aktif' ? activeCount : doneCount;
+              return (
+                <Pressable
+                  key={key}
+                  onPress={() => setFilter(key)}
+                  background={selected ? 'white' : undefined}
+                  radius="lg"
+                  style={{ flex: 1, paddingVertical: spacing.sm }}
+                  accessibilityLabel={`${label} talepler, ${count} adet`}
+                >
+                  <Text
+                    variant="body"
+                    color={selected ? 'blue' : 'white'}
+                    style={{ fontWeight: '600', fontSize: scale(15) }}
+                  >
+                    {label}
+                    {count > 0 ? ` · ${count}` : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </Stack>
+
+          <Pressable
+            onPress={() => setSheetOpen(true)}
+            radius="lg"
+            style={{
+              width: scale(48),
+              height: scale(48),
+              backgroundColor: deptFilter ? colors.white : 'rgba(255,255,255,0.16)',
+            }}
+            accessibilityLabel={
+              activeDept ? `Departman filtresi: ${activeDept.name}` : 'Departmana göre filtrele'
+            }
+          >
+            <Ionicons
+              name="filter"
+              size={20}
+              color={deptFilter ? colors.blue : colors.white}
+            />
+          </Pressable>
         </Stack>
 
-        {/* Departman filtre çipleri — dinamik, ekrana göre kaydırılabilir, küçük */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: spacing.xs, marginTop: spacing.sm }}
-        >
-          <Pressable
-            onPress={() => setDeptFilter(null)}
-            background={deptFilter === null ? 'white' : 'blueMedium'}
-            radius="lg"
-            style={{ paddingHorizontal: spacing.sm, paddingVertical: 5, minHeight: undefined, minWidth: undefined }}
-          >
-            <Text variant="caption" color={deptFilter === null ? 'blue' : 'white'} style={{ fontWeight: '600' }}>
-              Tümü
+        {activeDept && (
+          <Stack direction="row" align="center" gap="xs" style={{ marginTop: spacing.xs }}>
+            <Text variant="caption" color="blueLight">
+              {activeDept.name}
             </Text>
-          </Pressable>
-          {departments.map((dep) => {
-            const isSelected = deptFilter === dep.id;
-            return (
-              <Pressable
-                key={dep.id}
-                onPress={() => setDeptFilter(dep.id)}
-                background={isSelected ? 'white' : 'blueMedium'}
-                radius="lg"
-                style={{ paddingHorizontal: spacing.sm, paddingVertical: 5, minHeight: undefined, minWidth: undefined }}
-              >
-                <Text variant="caption" color={isSelected ? 'blue' : 'white'} style={{ fontWeight: '600' }}>
-                  {shortDeptLabel(dep.name)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+            <Pressable
+              onPress={() => setDeptFilter(null)}
+              style={{ paddingHorizontal: 4, minHeight: undefined }}
+              accessibilityLabel="Departman filtresini kaldır"
+            >
+              <Ionicons name="close-circle" size={16} color={colors.blueLight} />
+            </Pressable>
+          </Stack>
+        )}
       </Box>
 
-      <FlatList
-        data={visibleRequests}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.md, flexGrow: 1 }}
-        ItemSeparatorComponent={() => <Box style={{ height: spacing.sm }} />}
-        renderItem={({ item }) => (
-          <RequestCard
-            request={item}
-            productName={products[item.productId]}
-            departmentName={departments.find((d) => d.id === item.departmentId)?.name}
-            onPress={() => navigation.navigate('RequestTracking', { requestId: item.id })}
-          />
-        )}
-        ListEmptyComponent={
-          filter === 'aktif' ? (
-            <EmptyState
-              icon="grid-outline"
-              title="Aktif talebiniz yok"
-              description="Parça etiketini okutarak saniyeler içinde yeni bir malzeme talebi oluşturabilirsiniz."
-              actionLabel="Yeni Talep Oluştur"
-              actionVariant="primary"
-              onAction={() => navigation.navigate('DepartmentSelect')}
+      {pendingSyncCount > 0 && (
+        <Stack
+          direction="row"
+          align="center"
+          gap="xs"
+          style={{
+            paddingVertical: spacing.sm,
+            paddingHorizontal: spacing.md,
+            backgroundColor: SYNC_BANNER_BG,
+          }}
+        >
+          <Ionicons name="cloud-upload-outline" size={17} color={SYNC_BANNER_TEXT} />
+          <Text variant="caption" style={{ color: SYNC_BANNER_TEXT, flexShrink: 1 }}>
+            {pendingSyncCount} talep kuyrukta · bağlantı gelince gönderilecek
+          </Text>
+        </Stack>
+      )}
+
+      {initialLoading ? (
+        <SkeletonList />
+      ) : (
+        <FlatList
+          data={visibleRequests}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{
+            padding: spacing.md,
+            paddingBottom: listBottomPadding,
+            flexGrow: 1,
+          }}
+          ItemSeparatorComponent={() => <Box style={{ height: spacing.sm }} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadRequests('refresh')}
+              tintColor={colors.blue}
+              colors={[colors.blue]}
             />
-          ) : (
-            <EmptyState
-              icon="file-tray-outline"
-              title="Talep bulunamadı"
-              description="Bu sekmede gösterilecek bir talebiniz yok."
-            />
-          )
-        }
-      />
+          }
+          renderItem={({ item }) => (
+<RequestCard
+  request={item}
+  productName={products[item.productId]}
+  meta={departments.find((d) => d.id === item.departmentId)?.name}
+  onPress={() => navigation.navigate('RequestTracking', { requestId: item.id })}
+/>
+          )}
+          ListEmptyComponent={
+            filter === 'aktif' ? (
+              <EmptyState
+                icon="grid-outline"
+                title="Aktif talebiniz yok"
+                description="Parça etiketini okutarak saniyeler içinde yeni bir malzeme talebi oluşturabilirsiniz."
+                actionLabel="Yeni talep oluştur"
+                actionVariant="primary"
+                onAction={handleNewRequest}
+              />
+            ) : (
+              <EmptyState
+                icon="file-tray-outline"
+                title="Teslim edilmiş talep yok"
+                description={
+                  activeDept
+                    ? `${activeDept.name} için tamamlanmış bir talebiniz bulunmuyor.`
+                    : 'Tamamlanan talepleriniz burada listelenir.'
+                }
+              />
+            )
+          }
+        />
+      )}
 
       {user && canCreateLegacyRequest(user.role) && (
         <Pressable
           testID="home-new-request-fab"
-          onPress={() => navigation.navigate('DepartmentSelect')}
+          onPress={handleNewRequest}
           background="blue"
           radius="lg"
-          style={{ position: 'absolute', right: spacing.lg, bottom: insets.bottom + spacing.lg, width: 64, height: 64 }}
+          style={{
+            position: 'absolute',
+            right: spacing.lg,
+            bottom: insets.bottom + spacing.lg,
+            height: FAB_HEIGHT,
+            paddingHorizontal: spacing.lg,
+            borderRadius: 999,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 3 },
+            shadowOpacity: 0.2,
+            shadowRadius: 6,
+            elevation: 5,
+          }}
           accessibilityLabel="Yeni talep oluştur"
         >
-          <Text variant="h1" color="white">
-            +
-          </Text>
+          <Stack direction="row" align="center" gap="xs">
+            <Ionicons name="qr-code-outline" size={scale(20)} color={colors.white} />
+            <Text variant="body" color="white" style={{ fontWeight: '600' }}>
+              Yeni talep
+            </Text>
+          </Stack>
         </Pressable>
       )}
+
+      <Modal
+        visible={sheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSheetOpen(false)}
+      >
+        <RNPressable
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+          onPress={() => setSheetOpen(false)}
+          accessibilityLabel="Kapat"
+        />
+        <Box
+          background="white"
+          style={{
+            borderTopLeftRadius: radius.lg,
+            borderTopRightRadius: radius.lg,
+            paddingBottom: insets.bottom + spacing.md,
+            maxHeight: '70%',
+          }}
+        >
+          <Box style={{ padding: spacing.md }}>
+            <Text variant="h1" style={{ fontSize: scale(18) }}>
+              Departman
+            </Text>
+          </Box>
+          <ScrollView>
+            {[{ id: null, name: 'Tüm departmanlar' }, ...departments].map((dep) => {
+              const selected = deptFilter === dep.id;
+              return (
+                <Pressable
+                  key={dep.id ?? 'all'}
+                  onPress={() => {
+                    setDeptFilter(dep.id);
+                    setSheetOpen(false);
+                  }}
+                  style={{
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.md,
+                    alignItems: 'stretch',
+                  }}
+                  accessibilityLabel={dep.name}
+                >
+                  <Stack direction="row" justify="space-between" align="center">
+                    <Text variant="body" color={selected ? 'blue' : undefined}>
+                      {dep.name}
+                    </Text>
+                    {selected && <Ionicons name="checkmark" size={20} color={colors.blue} />}
+                  </Stack>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </Box>
+      </Modal>
     </Box>
   );
 }

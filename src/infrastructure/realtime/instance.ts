@@ -22,9 +22,17 @@ export const realtimeClient = new RealtimeClient({
   getToken: () => null,
 });
 
-// Plan Bölüm 9.2: bağlantı durumu her zaman görünür olmalı. Tek örnek olduğu
-// için bu dinleme modül yüklenir yüklenmez, uygulama boyunca bir kez kurulur.
-realtimeClient.onStateChange((status) => useConnectionStore.getState().setStatus(status));
+// Plan Bölüm 9.2: bağlantı durumu her zaman görünür olmalı — AMA sadece
+// realtime gerçekten yapılandırılmışsa. isRealtimeConfigured false olduğu
+// sürece (backend WS ucu yok, bkz. dosya başı notu) bu dinleyiciyi hiç
+// kaydetmiyoruz — aksi halde bu client, hiçbir zaman gerçekten bağlanmadığı
+// halde "DISCONNECTED" durumunu mepsanServerClient ile PAYLAŞILAN aynı
+// connectionStore.status alanına yazıp, gerçek (mepsanServer) bağlantının
+// "CONNECTED" durumunun üzerine geçebiliyordu — SettingsScreen'de bağlantı
+// her zaman "Çevrimdışı" görünmesinin sebebi buydu.
+if (isRealtimeConfigured) {
+  realtimeClient.onStateChange((status) => useConnectionStore.getState().setStatus(status));
+}
 
 /** Plan Bölüm 9.2 kanal adlandırması: "dept:<kod>" ve "user:<id>". */
 export function buildChannelsForUser(user: User): string[] {

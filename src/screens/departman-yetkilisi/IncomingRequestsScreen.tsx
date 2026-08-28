@@ -1,3 +1,4 @@
+// src/screens/departman-yetkilisi/IncomingRequestsScreen.tsx
 import { useCallback, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,6 +16,7 @@ import { PriorityBadge, Priority } from '../../design-system/components/Priority
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { LoadingView } from '../../design-system/components/LoadingView';
 import { colors, spacing, radius } from '../../design-system/tokens';
+import { scale } from '../../design-system/tokens/scale';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { getDepartments } from '../../api/departments';
@@ -56,7 +58,6 @@ export default function IncomingRequestsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('[FOCUS] IncomingRequests odaklandı, veri çekiliyor');
       if (!user?.departmentId) return;
       Promise.all([getRequests({ departmentId: user.departmentId }), getDepartments()]).then(
         async ([reqs, departments]) => {
@@ -83,6 +84,7 @@ export default function IncomingRequestsScreen() {
   const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
   const isPartial = (r: Request) =>
     r.fulfilledQuantity !== undefined &&
+    r.fulfilledQuantity > 0 &&
     r.fulfilledQuantity < r.quantity &&
     (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
 
@@ -97,7 +99,6 @@ export default function IncomingRequestsScreen() {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  // İstatistik kutuları her zaman "aktif" kapsamına göre hesaplanır (filtreden bağımsız).
   const activeScope = nonCancelled.filter((r) => r.status !== 'TESLIM_EDILDI');
   const receivedCount = activeScope.filter((r) => r.status === 'TALEP_ALINDI').length;
   const preparingCount = activeScope.filter((r) => r.status === 'HAZIRLANIYOR' && !isPartial(r)).length;
@@ -109,107 +110,107 @@ export default function IncomingRequestsScreen() {
         style={{
           paddingTop: insets.top + spacing.md,
           paddingHorizontal: spacing.md,
-          paddingBottom: spacing.md,
+          paddingBottom: spacing.sm,
           borderBottomLeftRadius: radius.lg,
           borderBottomRightRadius: radius.lg,
         }}
       >
-        <Stack direction="row" justify="space-between" align="center">
-          <Text
-            variant="bodyBold"
-            color="white"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            style={{ opacity: 0.85, letterSpacing: 1, fontSize: 18, flexShrink: 1 }}
-          >
-            {departmentName.toUpperCase()}
-          </Text>
+        <Stack direction="row" justify="space-between" align="flex-start">
+          <Box style={{ flex: 1 }}>
+            <Text
+              variant="caption"
+              color="white"
+              numberOfLines={1}
+              style={{ opacity: 0.75, letterSpacing: 1 }}
+            >
+              {departmentName.toUpperCase()}
+            </Text>
+            <Text variant="h2" color="white">
+              Hazırlama Kuyruğu
+            </Text>
+          </Box>
           <Stack direction="row" gap="sm">
             <NotificationBell />
             <Pressable
               onPress={() => navigation.navigate('Settings')}
               background="blueMedium"
-              style={{ borderRadius: 999 }}
+              style={{ borderRadius: 999, width: scale(38), height: scale(38), minWidth: scale(38), minHeight: scale(38) }}
               accessibilityLabel="Ayarlar"
             >
-              <Ionicons name="settings-outline" size={22} color={colors.white} />
+              <Ionicons name="settings-outline" size={scale(18)} color={colors.white} />
             </Pressable>
           </Stack>
         </Stack>
 
-        <Text variant="h1" color="white" style={{ marginTop: spacing.md, alignSelf: 'center' }}>
-          Hazırlama Kuyruğu
-        </Text>
-
         <Stack
           direction="row"
           style={{
-            marginTop: spacing.md,
-            backgroundColor: colors.blueDark,
+            marginTop: spacing.sm,
+            backgroundColor: 'rgba(255,255,255,0.14)',
             borderRadius: radius.lg,
             padding: 3,
           }}
         >
-          {FILTERS.map(({ key, label }) => (
-            <Pressable
-              key={key}
-              onPress={() => setFilter(key)}
-              background={filter === key ? 'white' : undefined}
-              radius="lg"
-              style={{ flex: 1, paddingVertical: 6, minHeight: undefined }}
-            >
-              <Text variant="caption" color={filter === key ? 'blue' : 'white'} style={{ fontWeight: '700' }}>
-                {label}
-              </Text>
-            </Pressable>
-          ))}
-        </Stack>
-
-        <Stack direction="row" gap="sm" style={{ marginTop: spacing.md }}>
-          <StatBox value={receivedCount} label="talep alındı" />
-          <StatBox value={preparingCount} label="hazırlanıyor" />
-          <StatBox value={activeScope.length} label="bekleyen" />
+          {FILTERS.map(({ key, label }) => {
+            const count = key === 'aktif' ? activeScope.length : key === 'kismi' ? nonCancelled.filter(isPartial).length : nonCancelled.filter((r) => r.status === 'TESLIM_EDILDI').length;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => setFilter(key)}
+                background={filter === key ? 'white' : undefined}
+                radius="lg"
+                style={{ flex: 1, paddingVertical: 7, minHeight: undefined }}
+              >
+                <Text variant="body" color={filter === key ? 'blue' : 'white'} style={{ fontWeight: '700', fontSize: scale(14), textAlign: 'center' }}>
+                  {label}{count > 0 ? ` (${count})` : ''}
+                </Text>
+              </Pressable>
+            );
+          })}
         </Stack>
       </Box>
 
       <FlatList
         data={sortedRequests}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.md, flexGrow: 1, gap: spacing.sm }}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
         renderItem={({ item }) => {
           const priority = item.priority;
-          const isCancelledOrRejected = item.status === 'IPTAL_EDILDI' || item.status === 'REDDEDILDI';
           return (
             <Pressable
               onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-              background={isCancelledOrRejected ? 'dangerLight' : 'surface'}
+              background="surface"
               radius="md"
               style={{
                 width: '100%',
                 padding: spacing.md,
                 alignItems: 'flex-start',
                 borderLeftWidth: 4,
-                borderLeftColor: isCancelledOrRejected ? colors.danger : colors[priorityColors[priority]],
-                opacity: isCancelledOrRejected ? 0.75 : 1,
+                borderLeftColor: colors[priorityColors[priority]],
               }}
             >
-              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
-                <PriorityBadge priority={priority} />
-                <Text variant="caption" color="textMuted">
-                  {getRelativeTime(item.createdAt)}
+              <Stack direction="row" justify="space-between" align="flex-start" style={{ width: '100%' }}>
+                <Text variant="bodyBold" numberOfLines={2} style={{ flex: 1, marginRight: spacing.sm }}>
+                  {products[item.productId]}
                 </Text>
+                <StatusChip status={item.status} />
               </Stack>
-              <Text variant="bodyBold" style={{ marginTop: spacing.sm }}>
-                {products[item.productId]}
-              </Text>
+
               <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
                 {item.requesterName ?? item.requesterId}
               </Text>
-              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
-                <Text variant="caption" color="textMuted">
-                  {isPartial(item) ? `${item.fulfilledQuantity}/${item.quantity} adet` : `${item.quantity} adet`}
-                </Text>
-                <StatusChip status={item.status} />
+
+              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.sm }}>
+                <PriorityBadge priority={priority} />
+                <Stack direction="row" align="center" gap="xs">
+                  <Text variant="bodyBold" color="textPrimary">
+                    {isPartial(item) ? `${item.fulfilledQuantity}/${item.quantity}` : item.quantity}
+                  </Text>
+                  <Text variant="caption" color="textMuted">adet</Text>
+                  <Text variant="caption" color="textMuted" style={{ marginLeft: spacing.xs }}>
+                    · {getRelativeTime(item.createdAt)}
+                  </Text>
+                </Stack>
               </Stack>
             </Pressable>
           );
@@ -218,27 +219,6 @@ export default function IncomingRequestsScreen() {
           <EmptyState title="Kuyruk boş" description="Şu an bekleyen talep yok" icon="checkmark-done-outline" />
         }
       />
-    </Box>
-  );
-}
-
-function StatBox({ value, label }: { value: number; label: string }) {
-  return (
-    <Box
-      style={{
-        flex: 1,
-        backgroundColor: colors.blueDark,
-        borderRadius: radius.md,
-        padding: spacing.sm,
-        alignItems: 'center',
-      }}
-    >
-      <Text variant="h2" color="white">
-        {value}
-      </Text>
-      <Text variant="caption" color="white" style={{ opacity: 0.75 }}>
-        {label}
-      </Text>
     </Box>
   );
 }

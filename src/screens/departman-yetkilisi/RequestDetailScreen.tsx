@@ -35,7 +35,7 @@ const stepsRequiringConfirm: RequestStatus[] = ['HAZIRLANIYOR', 'HAZIR'];
 
 // Kısmi karşılama sadece bu iki adımda anlamlı — sonraki adımlarda
 // (YOLDA, TESLIM_EDILDI) zaten miktar tartışması bitmiş olur.
-const stepsAllowingPartial: RequestStatus[] = ['TALEP_ALINDI', 'HAZIRLANIYOR'];
+const stepsAllowingPartial: RequestStatus[] = ['HAZIRLANIYOR'];
 
 const FAKE_PRIORITY: Priority = 'NORMAL';
 
@@ -145,8 +145,7 @@ export default function RequestDetailScreen() {
 
         <Box background="surface" radius="md" style={{ marginTop: spacing.md }}>
           <DetailRow label="Adet" value={`${request.quantity} adet`} />
-          {request.fulfilledQuantity !== undefined && request.fulfilledQuantity < request.quantity && (
-            <>
+{request.fulfilledQuantity !== undefined && request.fulfilledQuantity > 0 && request.fulfilledQuantity < request.quantity && (            <>
               <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
               <DetailRow label="Karşılanan" value={`${request.fulfilledQuantity} / ${request.quantity} adet`} />
             </>

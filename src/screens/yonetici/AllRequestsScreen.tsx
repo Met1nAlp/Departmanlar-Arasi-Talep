@@ -1,6 +1,6 @@
 // src/screens/yonetici/AllRequestsScreen.tsx
 import { useEffect, useState } from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,13 +22,14 @@ import { getDepartments } from '../../api/departments';
 
 type Nav = NativeStackNavigationProp<YoneticiStackParamList, 'AllRequests'>;
 
-// GEÇİCİ: gerçek priority alanı Request tipinde henüz yok (Efe'nin E1 maddesi) —
-// diğer ekranlardaki (IncomingRequests, RequestDetail) aynı yer tutucuyla tutarlı.
-const FAKE_PRIORITY: Priority = 'NORMAL';
 const priorityColors: Record<Priority, keyof typeof colors> = {
-  ACIL: 'danger',
+  ACIL: 'amber',
   NORMAL: 'blue',
 };
+
+function shortDeptLabel(name: string): string {
+  return name.split(' ')[0];
+}
 
 export default function AllRequestsScreen() {
   const navigation = useNavigation<Nav>();
@@ -72,9 +73,9 @@ export default function AllRequestsScreen() {
         }}
       >
         <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
-          MTS · YÖNETİM
+          MEPSAN · YÖNETİM
         </Text>
-        <Text variant="h2" color="white" style={{ marginTop: spacing.xs, marginBottom: spacing.md }}>
+        <Text variant="h1" color="white" style={{ marginTop: 2, marginBottom: spacing.sm }}>
           Tüm Talepler
         </Text>
         <TextField
@@ -83,57 +84,60 @@ export default function AllRequestsScreen() {
           value={query}
           onChangeText={setQuery}
         />
-        <Stack direction="row" gap="sm" wrap style={{ marginTop: spacing.md }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: spacing.xs, marginTop: spacing.sm }}
+        >
           <FilterChip label={`Tümü · ${requests.length}`} active={deptFilter === null} onPress={() => setDeptFilter(null)} />
           {departments.map((dep) => (
             <FilterChip
               key={dep.id}
-              label={dep.name}
+              label={shortDeptLabel(dep.name)}
               active={deptFilter === dep.id}
               onPress={() => setDeptFilter(dep.id)}
             />
           ))}
-        </Stack>
+        </ScrollView>
       </Box>
+
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: spacing.md, flexGrow: 1, gap: spacing.sm }}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => navigation.navigate('AuditTimeline', { requestId: item.id })}
-            background="surface"
-            radius="md"
-            style={{
-              width: '100%',
-              padding: spacing.md,
-              alignItems: 'flex-start',
-              borderLeftWidth: 4,
-              borderLeftColor: colors[priorityColors[FAKE_PRIORITY]],
-            }}
-          >
-            <Stack direction="row" justify="space-between" align="center" gap="sm" style={{ width: '100%' }}>
-              <Text
-                variant="caption"
-                color="textMuted"
-                numberOfLines={1}
-                style={{ letterSpacing: 1, flexShrink: 1 }}
-              >
-                {item.id.toUpperCase()} · {departments.find((d) => d.id === item.departmentId)?.name.toUpperCase()}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
+        renderItem={({ item }) => {
+          const deptName = departments.find((d) => d.id === item.departmentId)?.name ?? '—';
+          return (
+            <Pressable
+              onPress={() => navigation.navigate('AuditTimeline', { requestId: item.id })}
+              background="surface"
+              radius="md"
+              style={{
+                width: '100%',
+                padding: spacing.md,
+                alignItems: 'flex-start',
+                borderLeftWidth: 4,
+                borderLeftColor: colors[priorityColors[item.priority]],
+              }}
+            >
+              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
+                <Text variant="caption" color="textMuted" numberOfLines={1} style={{ letterSpacing: 1, flexShrink: 1, marginRight: spacing.sm }}>
+                  {deptName.toUpperCase()}
+                </Text>
+                <PriorityBadge priority={item.priority} />
+              </Stack>
+              <Text variant="bodyBold" numberOfLines={2} style={{ marginTop: spacing.xs }}>
+                {products[item.productId]}
               </Text>
-              <PriorityBadge priority={FAKE_PRIORITY} />
-            </Stack>
-            <Text variant="bodyBold" style={{ marginTop: spacing.xs }}>
-              {products[item.productId]}
-            </Text>
-            <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
-              <Text variant="caption" color="textMuted">
-                {item.quantity} adet
-              </Text>
-              <StatusChip status={item.status} />
-            </Stack>
-          </Pressable>
-        )}
+              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
+                <Text variant="caption" color="textMuted">
+                  {item.quantity} adet
+                </Text>
+                <StatusChip status={item.status} />
+              </Stack>
+            </Pressable>
+          );
+        }}
         ListEmptyComponent={<EmptyState title="Kayıtlı talep yok" icon="file-tray-outline" />}
       />
     </Box>
@@ -144,11 +148,16 @@ function FilterChip({ label, active, onPress }: { label: string; active: boolean
   return (
     <Pressable
       onPress={onPress}
-      background={active ? 'white' : 'blueMedium'}
       radius="lg"
-      style={{ paddingHorizontal: spacing.md, paddingVertical: spacing.xs }}
+      style={{
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+        minHeight: undefined,
+        minWidth: undefined,
+        backgroundColor: active ? colors.white : 'rgba(255,255,255,0.14)',
+      }}
     >
-      <Text variant="bodyBold" color={active ? 'blue' : 'white'} numberOfLines={1}>
+      <Text variant="body" color={active ? 'blue' : 'white'} style={{ fontWeight: '700', opacity: active ? 1 : 0.9 }}>
         {label}
       </Text>
     </Pressable>

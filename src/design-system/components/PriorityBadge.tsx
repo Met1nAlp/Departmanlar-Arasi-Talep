@@ -3,12 +3,10 @@ import { View, StyleSheet } from 'react-native';
 import { Text } from '../primitives/Text';
 import { colors, spacing, radius } from '../tokens';
 
-// Efe'nin domain katmanındaki Priority enum'una bağlanacak (E1 maddesi).
-// Şimdilik string union olarak tanımlıyoruz, tip hazır olunca oradan import edeceğiz.
 export type Priority = 'ACIL' | 'NORMAL';
 
 const priorityConfig: Record<Priority, { color: string; label: string }> = {
-  ACIL: { color: colors.danger, label: 'Acil' },
+  ACIL: { color: colors.amber, label: 'Acil' },
   NORMAL: { color: colors.blue, label: 'Normal' },
 };
 

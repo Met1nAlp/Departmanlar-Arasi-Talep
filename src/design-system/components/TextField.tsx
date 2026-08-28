@@ -3,6 +3,7 @@ import { TextInput, TextInputProps, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../primitives/Text';
 import { colors, spacing, radius, typography } from '../tokens';
+import { scale } from '../tokens/scale';
 
 interface Props extends TextInputProps {
   label?: string;
@@ -19,7 +20,7 @@ export function TextField({ label, icon, error, style, ...rest }: Props) {
         </Text>
       )}
       <View style={[styles.inputRow, error && { borderColor: colors.danger }]}>
-        {icon && <Ionicons name={icon as any} size={20} color={colors.textMuted} style={styles.icon} />}
+        {icon && <Ionicons name={icon as any} size={scale(20)} color={colors.textMuted} style={styles.icon} />}
         <TextInput
           style={[typography.body, styles.input, style]}
           placeholderTextColor={colors.textMuted}
@@ -49,7 +50,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    minHeight: 56, // dokunma/odaklama alanı fabrika ortamı için yeterince büyük
+    minHeight: scale(56), // dokunma/odaklama alanı fabrika ortamı için yeterince büyük
     backgroundColor: colors.white,
   },
   icon: {

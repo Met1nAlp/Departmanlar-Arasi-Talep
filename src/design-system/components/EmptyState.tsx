@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text } from '../primitives/Text';
 import { Button } from './Button';
 import { colors, spacing } from '../tokens';
+import { scale } from '../tokens/scale';
 
 interface Props {
   icon?: string; // Ionicons ismi
@@ -30,7 +31,7 @@ export function EmptyState({
 }: Props) {
   return (
     <View style={styles.container}>
-      <Ionicons name={icon as any} size={48} color={colors.textMuted} />
+      <Ionicons name={icon as any} size={scale(48)} color={colors.textMuted} />
       <Text variant="h2" color="textSecondary" style={styles.title}>
         {title}
       </Text>

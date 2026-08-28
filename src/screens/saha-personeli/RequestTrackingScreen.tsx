@@ -155,7 +155,7 @@ export default function RequestTrackingScreen() {
             onPress={() => navigation.navigate('DeliveryConfirm', { requestId: request.id })}
           />
         )}
-        {request.status !== 'TESLIM_EDILDI' && (
+        {(request.status === 'TALEP_ALINDI' || request.status === 'HAZIRLANIYOR') && (
           <Button
             label="Talebi İptal Et"
             onPress={() => navigation.navigate('CancelRequest', { requestId: request.id })}

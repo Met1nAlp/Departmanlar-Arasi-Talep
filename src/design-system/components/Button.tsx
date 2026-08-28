@@ -38,13 +38,13 @@ export function Button({
   const { background, textColor } = variantStyles[variant];
   const isInactive = disabled || loading;
 
-  const baseStyle: ViewStyle = {
-    paddingHorizontal: spacing.lg,
-    opacity: isInactive ? 0.5 : 1,
-    width: fullWidth ? '100%' : undefined,
-    borderWidth: variant === 'secondary' || variant === 'dangerOutline' ? 1 : 0,
-    borderColor: variant === 'dangerOutline' ? colors.danger : colors.blue,
-  };
+const baseStyle: ViewStyle = {
+  paddingHorizontal: spacing.lg,
+  opacity: isInactive ? 0.5 : 1,
+  width: fullWidth ? '100%' : undefined,
+  borderWidth: variant === 'secondary' || variant === 'dangerOutline' ? 1 : 0,
+  borderColor: variant === 'dangerOutline' ? colors.danger : colors.border,
+};
 
   return (
     <Pressable

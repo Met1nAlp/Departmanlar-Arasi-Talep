@@ -1,54 +1,61 @@
 // src/design-system/components/StatusChip.tsx
-import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Box } from '../primitives/Box';
+import { Stack } from '../primitives/Stack';
 import { Text } from '../primitives/Text';
-import { statusTokens, RequestStatusKey } from '../tokens';
-import { radius, spacing } from '../tokens';
+import { spacing, radius, statusTokens } from '../tokens';
+import { statusSurfaces, statusTone, StatusTone } from '../tokens/colors';
+import { statusLabels } from '../../utils/statusLabels';
+import { RequestStatus } from '../../types';
 
-interface Props {
-  status: RequestStatusKey;
-  compact?: boolean; // true: sadece ikon, alanı çok dar yerlerde (örn. tablo hücresi)
-}
+// "Kısmi" gerçek bir RequestStatus değil, HAZIRLANIYOR/HAZIR üzerindeki bir
+// nitelik. Rozet tarafında ayrı bir tür gibi davranıyor.
+export type ChipStatus = RequestStatus | 'KISMI';
 
-// StatusBadge'in kompakt kardeşi — filtre çubukları, kuyruk listesi gibi
-// dar alanlarda kullanılır. Aynı statusTokens'tan besleniyor, tek kaynak korunuyor.
-export function StatusChip({ status, compact = false }: Props) {
-  const token = statusTokens[status];
+const TONE_STYLES: Record<StatusTone, { surface: string; text: string }> = {
+  accent: { surface: statusSurfaces.accentSurface, text: statusSurfaces.accentText },
+  success: { surface: statusSurfaces.successSurface, text: statusSurfaces.successText },
+  warning: { surface: statusSurfaces.warningSurface, text: statusSurfaces.warningText },
+  danger: { surface: statusSurfaces.dangerSurface, text: statusSurfaces.dangerText },
+  neutral: { surface: '#F0F2F5', text: '#5A626B' },
+};
+
+const KISMI = {
+  tone: 'warning' as StatusTone,
+  icon: 'ellipsis-horizontal-circle-outline' as const,
+  label: 'Kısmi',
+};
+
+export function StatusChip({ status }: { status: ChipStatus }) {
+  const isPartial = status === 'KISMI';
+  const tone = isPartial ? KISMI.tone : statusTone[status] ?? 'neutral';
+  const icon = isPartial ? KISMI.icon : (statusTokens[status as RequestStatus]?.icon as any);
+  const label = isPartial ? KISMI.label : statusLabels[status as RequestStatus];
+  const style = TONE_STYLES[tone];
 
   return (
-    <View
-      style={[
-        styles.chip,
-        { backgroundColor: token.bgColor },
-        compact && styles.chipCompact,
-      ]}
-      accessibilityLabel={token.label}
+    <Box
+      style={{
+        backgroundColor: style.surface,
+        borderRadius: radius.sm,
+        paddingHorizontal: spacing.xs,
+        paddingVertical: 3,
+      }}
     >
-      <Ionicons name={token.icon as any} size={compact ? 14 : 12} color={token.color} />
-      {!compact && (
-        <Text variant="caption" color={token.color === '#FFFFFF' ? 'white' : 'textPrimary'} style={styles.label}>
-          {token.label}
+      {/* Renk tek başına taşıyıcı değil: ikon ve metin de var. Güneş altında
+          ve renk körlüğünde rozet yine okunuyor. */}
+      <Stack direction="row" align="center" gap="xs">
+        {icon && <Ionicons name={icon} size={13} color={style.text} />}
+        <Text variant="caption" style={{ color: style.text, fontWeight: '600', fontSize: 11 }}>
+          {label}
         </Text>
-      )}
-    </View>
+      </Stack>
+    </Box>
   );
 }
 
-const styles = StyleSheet.create({
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    alignSelf: 'flex-start',
-  },
-  chipCompact: {
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 999, // tam yuvarlak, sadece ikon barındıran daire
-  },
-  label: {
-    marginLeft: 4,
-  },
-});
+/** Durum ailesinin yüzey/metin rengini dışarı verir — kart şeritleri için. */
+export function toneStyle(status: ChipStatus) {
+  const tone = status === 'KISMI' ? 'warning' : statusTone[status] ?? 'neutral';
+  return TONE_STYLES[tone];
+}

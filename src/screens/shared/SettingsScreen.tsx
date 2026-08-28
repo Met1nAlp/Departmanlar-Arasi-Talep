@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+// src/screens/shared/SettingsScreen.tsx
+import { useState } from 'react';
+import { View } from 'react-native';
 import Constants from 'expo-constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,11 +11,11 @@ import { Text } from '../../design-system/primitives/Text';
 import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
-import { spacing, colors, radius } from '../../design-system/tokens';
-import { useAuthStore, useActiveUser } from '../../store/authStore';
-import { useDeviceStore } from '../../store/deviceStore';
-import { getDepartments } from '../../api/departments';
+import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
+import { useAuthStore, useActiveUser } from '../../store/authStore';
+import { useConnectionStore } from '../../store/connectionStore';
+import { useDeviceStore } from '../../store/deviceStore';
 
 const roleLabels: Record<string, string> = {
   saha_personeli: 'Saha Personeli',
@@ -26,25 +28,18 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const user = useActiveUser();
   const logout = useAuthStore((s) => s.logout);
+  const isConnected = useConnectionStore((s) => s.status === 'CONNECTED');
   const deviceUid = useDeviceStore((s) => s.deviceUid);
+  const appVersion = Constants.expoConfig?.version ?? '—';
   const [confirmVisible, setConfirmVisible] = useState(false);
-  const [departmentName, setDepartmentName] = useState('');
 
-  const appVersion = Constants.expoConfig?.version ?? 'bilinmiyor';
+  const handleLogout = () => {
+    setConfirmVisible(true);
+  };
 
-  useEffect(() => {
-    if (!user?.departmentId) return;
-    getDepartments().then((departments) => {
-      setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
-    });
-  }, [user]);
-
-  const handleLogoutConfirm = () => {
+  const performLogout = () => {
     setConfirmVisible(false);
     logout();
-    // currentUser null olunca RootNavigator otomatik olarak AuthNavigator'a
-    // döner, o da kart okutma ekranını gösterir — elle navigation.navigate
-    // çağrısına gerek yok.
   };
 
   return (
@@ -54,94 +49,89 @@ export default function SettingsScreen() {
         style={{
           paddingTop: insets.top + spacing.md,
           paddingHorizontal: spacing.md,
-          paddingBottom: spacing.lg,
+          paddingBottom: spacing.md,
           borderBottomLeftRadius: radius.lg,
           borderBottomRightRadius: radius.lg,
-          position: 'relative',
         }}
       >
         <Stack direction="row" align="center" gap="md">
-          {navigation.canGoBack() ? (
-            <Pressable
-              onPress={() => navigation.goBack()}
-              accessibilityLabel="Geri"
-              background="blueMedium"
-              style={{ width: scale(56), height: scale(56), minWidth: scale(56), minHeight: scale(56), borderRadius: scale(999) }}
-            >
-              <Ionicons name="chevron-back" size={26} color={colors.white} />
-            </Pressable>
-          ) : (
-            <Box
-              background="blueMedium"
-              style={{ width: scale(56), height: scale(56), minWidth: scale(56), minHeight: scale(56), borderRadius: scale(999), alignItems: 'center', justifyContent: 'center' }}
-            >
-              <Ionicons name="person" size={26} color={colors.white} />
-            </Box>
-          )}
-          <Box>
-            <Text variant="h1" color="white">
-              {user?.name ?? '—'}
-            </Text>
+          <Pressable onPress={() => navigation.goBack()} background="blueMedium" radius="md" accessibilityLabel="Geri">
+            <Ionicons name="chevron-back" size={20} color={colors.white} />
+          </Pressable>
+          <Box style={{ flex: 1 }}>
             <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
-              {user ? roleLabels[user.role]?.toUpperCase() : '—'}
+              AYARLAR
+            </Text>
+            <Text variant="h2" color="white" numberOfLines={1}>
+              {user?.name ?? '—'}
             </Text>
           </Box>
         </Stack>
       </Box>
 
-            <Box padding="md" style={{ flex: 1, paddingBottom: insets.bottom + spacing.md }}>
+      <Box padding="md" style={{ flex: 1 }}>
         <Box background="surface" radius="md">
-          <InfoRow label="Departman" value={departmentName || '—'} />
-          <Divider />
-          <InfoRow label="Cihaz" value={deviceUid ?? 'kayıtlı değil'} />
-          <Divider />
-          {/* GEÇİCİ: connectionStore.ts henüz bağlanmadı, sabit değer gösteriyor. */}
+          <SettingsRow label="Rol" value={user ? roleLabels[user.role] ?? user.role : '—'} />
+          {user?.departmentId && (
+            <>
+              <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
+              <SettingsRow label="Departman" value={user.departmentId} />
+            </>
+          )}
+          <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
+          <SettingsRow label="Cihaz" value={deviceUid ?? '—'} mono />
+          <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
           <Stack direction="row" justify="space-between" align="center" style={{ padding: spacing.md }}>
             <Text variant="body" color="textSecondary">
               Bağlantı
             </Text>
             <Stack direction="row" align="center" gap="xs">
-              <Ionicons name="checkmark-circle" size={16} color={colors.blue} />
-              <Text variant="bodyBold" color="blue">
-                Çevrimiçi
+              <Box
+                style={{
+                  width: scale(8),
+                  height: scale(8),
+                  borderRadius: 999,
+                  backgroundColor: isConnected ? colors.success : colors.danger,
+                }}
+              />
+              <Text variant="bodyBold" color={isConnected ? 'success' : 'danger'}>
+                {isConnected ? 'Çevrimiçi' : 'Çevrimdışı'}
               </Text>
             </Stack>
           </Stack>
         </Box>
 
-        <Box style={{ flex: 1 }} />
+        <View style={{ flex: 1 }} />
 
-        <Button label="Oturumu Kapat" onPress={() => setConfirmVisible(true)} variant="dangerOutline" />
+        <Button label="Oturumu Kapat" onPress={handleLogout} variant="danger" />
 
         <Text variant="caption" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.md }}>
-          MTS {appVersion}
+          Mepsan MTS · v{appVersion}
         </Text>
       </Box>
 
       <ConfirmSheet
         visible={confirmVisible}
         title="Oturumu kapatmak istediğinize emin misiniz?"
-        description="Cihaz kart okutma ekranına döner."
+        description="Tekrar giriş yapmak için kartınızı okutmanız gerekecek."
         confirmLabel="Evet, Çıkış Yap"
         variant="danger"
-        onConfirm={handleLogoutConfirm}
+        onConfirm={performLogout}
         onCancel={() => setConfirmVisible(false)}
       />
     </Box>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function SettingsRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <Stack direction="row" justify="space-between" style={{ padding: spacing.md }}>
+    <Stack direction="row" justify="space-between" align="center" style={{ padding: spacing.md }}>
       <Text variant="body" color="textSecondary">
         {label}
       </Text>
-      <Text variant="bodyBold">{value}</Text>
+      <Text variant={mono ? 'mono' : 'bodyBold'} numberOfLines={1} style={{ flexShrink: 1, textAlign: 'right' }}>
+        {value}
+      </Text>
     </Stack>
   );
-}
-
-function Divider() {
-  return <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />;
 }

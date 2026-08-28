@@ -35,7 +35,7 @@ export function ConfirmSheet({
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           {variant === 'danger' && (
-            <Ionicons name="warning-outline" size={40} color={colors.danger} style={styles.icon} />
+            <Ionicons name="warning-outline" size={scale(40)} color={colors.danger} style={styles.icon} />
           )}
           <Text variant="h2" color="textPrimary" style={styles.title}>
             {title}

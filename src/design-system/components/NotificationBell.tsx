@@ -6,7 +6,10 @@ import { Box } from '../primitives/Box';
 import { Pressable } from '../primitives/Pressable';
 import { Text } from '../primitives/Text';
 import { colors } from '../tokens';
+import { scale } from '../tokens/scale';
 import { observeUnreadCount } from '../../infrastructure/notifications/notificationService';
+
+const SIZE = scale(38);
 
 export function NotificationBell() {
   const navigation = useNavigation();
@@ -21,10 +24,10 @@ export function NotificationBell() {
     <Pressable
       onPress={() => (navigation as any).navigate('Notifications')}
       background="blueMedium"
-      style={{ borderRadius: 999 }}
+      style={{ borderRadius: 999, width: SIZE, height: SIZE, minWidth: SIZE, minHeight: SIZE }}
       accessibilityLabel="Bildirimler"
     >
-      <Ionicons name="notifications-outline" size={22} color={colors.white} />
+      <Ionicons name="notifications-outline" size={scale(18)} color={colors.white} />
       {count > 0 && (
         <Box
           background="danger"
@@ -32,15 +35,17 @@ export function NotificationBell() {
             position: 'absolute',
             top: -2,
             right: -2,
-            minWidth: 18,
-            height: 18,
+            minWidth: scale(16),
+            height: scale(16),
             borderRadius: 999,
             alignItems: 'center',
             justifyContent: 'center',
             paddingHorizontal: 3,
+            borderWidth: 1.5,
+            borderColor: colors.blue,
           }}
         >
-          <Text variant="caption" color="white" style={{ fontSize: 10, fontWeight: '700' }}>
+          <Text variant="caption" color="white" style={{ fontSize: 9, fontWeight: '700' }}>
             {count > 9 ? '9+' : count}
           </Text>
         </Box>

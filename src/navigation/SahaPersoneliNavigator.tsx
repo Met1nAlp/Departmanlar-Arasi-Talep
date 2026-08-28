@@ -3,7 +3,6 @@ import { colors, typography } from '../constants/theme';
 import { SahaPersoneliStackParamList } from './types';
 
 import HomeScreen from '../screens/saha-personeli/HomeScreen';
-import DepartmentSelectScreen from '../screens/saha-personeli/DepartmentSelectScreen';
 import QRScanScreen from '../screens/saha-personeli/QRScanScreen';
 import RequestCreatedScreen from '../screens/saha-personeli/RequestCreatedScreen';
 import RequestTrackingScreen from '../screens/saha-personeli/RequestTrackingScreen';
@@ -25,8 +24,7 @@ export default function SahaPersoneliNavigator() {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="DepartmentSelect" component={DepartmentSelectScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="QRScan" component={QRScanScreen} options={{ title: 'QR Kod Okut' }} />
+      <Stack.Screen name="QRScan" component={QRScanScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="RequestCreated"
         component={RequestCreatedScreen}
@@ -41,7 +39,7 @@ export default function SahaPersoneliNavigator() {
       <Stack.Screen name="CancelRequest" component={CancelRequestScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="ProductSearch" component={ProductSearchScreen} options={{ title: 'Ürün Ara' }} />
+      <Stack.Screen name="ProductSearch" component={ProductSearchScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }

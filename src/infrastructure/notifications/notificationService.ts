@@ -54,9 +54,10 @@ async function getRequestTitle(request: Request): Promise<string> {
 
 function getStatusMessageBody(request: Request, isNew: boolean): string {
   if (isNew) return STATUS_MESSAGES.TALEP_ALINDI ?? 'Yeni bir talep geldi';
-
+  
   const isPartial =
     request.fulfilledQuantity !== undefined &&
+    request.fulfilledQuantity > 0 &&
     request.fulfilledQuantity < request.quantity &&
     (request.status === 'HAZIRLANIYOR' || request.status === 'HAZIR');
 

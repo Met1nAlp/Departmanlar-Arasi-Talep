@@ -3,12 +3,13 @@ import { create } from 'zustand';
 export interface CartLine {
   partId: string;
   partName: string;
+  departmentId: string;
   qtyRequested: number;
 }
 
 interface CartState {
   lines: CartLine[];
-  addLine: (partId: string, partName: string, qty?: number) => void;
+  addLine: (partId: string, partName: string, departmentId: string, qty?: number) => void;
   updateQty: (partId: string, qty: number) => void;
   removeLine: (partId: string) => void;
   clear: () => void;
@@ -17,9 +18,8 @@ interface CartState {
 export const useCartStore = create<CartState>((set) => ({
   lines: [],
 
-  addLine: (partId, partName, qty = 1) =>
+  addLine: (partId, partName, departmentId, qty = 1) =>
     set((state) => {
-      // Aynı ürün zaten sepette varsa, tekrar eklemek yerine adedini artır
       const existing = state.lines.find((l) => l.partId === partId);
       if (existing) {
         return {
@@ -28,7 +28,7 @@ export const useCartStore = create<CartState>((set) => ({
           ),
         };
       }
-      return { lines: [...state.lines, { partId, partName, qtyRequested: qty }] };
+      return { lines: [...state.lines, { partId, partName, departmentId, qtyRequested: qty }] };
     }),
 
   updateQty: (partId, qty) =>
