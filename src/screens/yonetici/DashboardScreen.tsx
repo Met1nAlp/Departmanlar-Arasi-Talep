@@ -1,6 +1,6 @@
 // src/screens/yonetici/DashboardScreen.tsx
-import { useEffect, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ScrollView, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,13 +24,19 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const [requests, setRequests] = useState<Request[] | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadData = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (mode === 'refresh') setRefreshing(true);
+    const [reqs, deps] = await Promise.all([getRequests({}), getDepartments()]);
+    setRequests(reqs);
+    setDepartments(deps);
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
-    Promise.all([getRequests({}), getDepartments()]).then(([reqs, deps]) => {
-      setRequests(reqs);
-      setDepartments(deps);
-    });
-  }, []);
+    loadData('initial');
+  }, [loadData]);
 
   if (!requests) return <LoadingView />;
 
@@ -90,7 +96,17 @@ export default function DashboardScreen() {
         </Text>
       </Box>
 
-      <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData('refresh')}
+            tintColor={colors.blue}
+            colors={[colors.blue]}
+          />
+        }
+      >
         <Stack direction="row" gap="sm">
           <StatCard
             icon="file-tray-outline"

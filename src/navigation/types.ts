@@ -6,11 +6,15 @@ export type AuthStackParamList = {
   DeviceUnauthorized: undefined;
 };
 
-export type SahaPersoneliStackParamList = {
+export type UretimYoneticisiStackParamList = {
   Home: undefined;
   ProductSearch: undefined;
   QRScan: { preselectedProduct?: Product };
-  RequestCreated: { requestIds: string[] };
+  RequestCreated: {
+    requestIds: string[];
+    /** Departmana göre gruplanmış sepet özeti — özet ekranında departman bazlı gösterim için. */
+    groups: { departmentId: string; items: { partId: string; partName: string; qty: number }[] }[];
+  };
   RequestTracking: { requestId: string };
   DeliveryConfirm: { requestId: string };
   CancelRequest: { requestId: string };

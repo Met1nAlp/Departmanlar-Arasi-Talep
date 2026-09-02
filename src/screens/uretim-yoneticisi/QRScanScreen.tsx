@@ -1,12 +1,12 @@
-// src/screens/saha-personeli/QRScanScreen.tsx
-import { useState } from 'react';
-import { View } from 'react-native';
+// src/screens/uretim-yoneticisi/QRScanScreen.tsx
+import { useEffect, useState } from 'react';
+import { View, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { CommonActions, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
 import { Text } from '../../design-system/primitives/Text';
@@ -17,17 +17,18 @@ import { ScanTarget } from '../../design-system/components/ScanTarget';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import { getProductByQrCode } from '../../api/products';
-import { createRequest } from '../../api/requests';
+import { createOrder } from '../../api/requests';
+import { getDepartments } from '../../api/departments';
 import { useActiveUser } from '../../store/authStore';
-import { useCartStore } from '../../store/cartStore';
+import { useCartStore, type CartLine } from '../../store/cartStore';
 import { Product } from '../../types';
 import { parseGs1Barcode } from '../../domain/barcode/gs1Parser';
 
 const SUPPORTED_BARCODE_TYPES = ['qr', 'ean13', 'ean8', 'upc_a', 'code128'] as const;
 const DEFAULT_PRIORITY = 'NORMAL' as const;
 
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'QRScan'>;
-type Rt = RouteProp<SahaPersoneliStackParamList, 'QRScan'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'QRScan'>;
+type Rt = RouteProp<UretimYoneticisiStackParamList, 'QRScan'>;
 
 function ScreenHeader({ title, onBack, danger = false }: { title: string; onBack: () => void; danger?: boolean }) {
   const insets = useSafeAreaInsets();
@@ -74,6 +75,32 @@ export default function QRScanScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState('');
+  const [departmentNames, setDepartmentNames] = useState<Record<string, string>>({});
+  const [expandedDepartments, setExpandedDepartments] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    getDepartments()
+      .then((departments) => {
+        setDepartmentNames(Object.fromEntries(departments.map((d) => [d.id, d.name])));
+      })
+      .catch(() => {});
+  }, []);
+
+  const toggleDepartment = (departmentId: string) => {
+    setExpandedDepartments((prev) => {
+      const next = new Set(prev);
+      if (next.has(departmentId)) next.delete(departmentId);
+      else next.add(departmentId);
+      return next;
+    });
+  };
+
+  const cartGroups: [string, CartLine[]][] = [];
+  for (const line of cart.lines) {
+    const existingGroup = cartGroups.find(([departmentId]) => departmentId === line.departmentId);
+    if (existingGroup) existingGroup[1].push(line);
+    else cartGroups.push([line.departmentId, [line]]);
+  }
 
   const handleBarcodeScanned = async ({ data }: { data: string }) => {
     if (scanned) return;
@@ -119,21 +146,41 @@ export default function QRScanScreen() {
     if (finalLines.length === 0) return;
 
     setSubmitting(true);
-    const requestIds: string[] = [];
+
+    // Sepetteki eşyalar farklı departmanlara ait olabilir — her sipariş TEK
+    // departmana gider, bu yüzden departmana göre gruplayıp her grup için
+    // ayrı bir sipariş (order_id + items[]) gönderiyoruz.
+    const groupedByDepartment = new Map<string, typeof finalLines>();
     for (const line of finalLines) {
-      const newRequest = await createRequest({
-        departmentId: line.departmentId,
-        productId: line.partId,
-        quantity: line.qtyRequested,
+      const group = groupedByDepartment.get(line.departmentId) ?? [];
+      group.push(line);
+      groupedByDepartment.set(line.departmentId, group);
+    }
+
+    const requestIds: string[] = [];
+    const groups: { departmentId: string; items: { partId: string; partName: string; qty: number }[] }[] = [];
+    for (const [departmentId, lines] of groupedByDepartment) {
+      const createdRequests = await createOrder({
+        departmentId,
+        items: lines.map((line) => ({ productId: line.partId, quantity: line.qtyRequested })),
         requesterId: user.id,
         requesterName: user.name,
         priority: DEFAULT_PRIORITY,
       });
-      requestIds.push(newRequest.id);
+      requestIds.push(...createdRequests.map((r) => r.id));
+      groups.push({
+        departmentId,
+        items: lines.map((line) => ({ partId: line.partId, partName: line.partName, qty: line.qtyRequested })),
+      });
     }
     cart.clear();
     setSubmitting(false);
-    navigation.navigate('RequestCreated', { requestIds });
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 1,
+        routes: [{ name: 'Home' }, { name: 'RequestCreated', params: { requestIds, groups } }],
+      })
+    );
   };
 
   if (!permission) return null;
@@ -205,7 +252,11 @@ export default function QRScanScreen() {
     <Box style={{ flex: 1 }} background="white">
       <ScreenHeader title="Adet Girin" onBack={() => navigation.goBack()} />
 
-      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.md }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.md }}
+        keyboardShouldPersistTaps="handled"
+      >
         <Box background="surface" radius="md" padding="sm" style={{ alignItems: 'center', marginBottom: spacing.md }}>
           <Text variant="caption" color="textMuted" numberOfLines={1} style={{ letterSpacing: 1, marginBottom: 2 }}>
             ÜRÜN
@@ -232,39 +283,74 @@ export default function QRScanScreen() {
 
         {cart.lines.length > 0 && (
           <Box style={{ marginTop: spacing.md }}>
-            <Text variant="caption" color="textMuted" style={{ letterSpacing: 1, marginBottom: spacing.xs }}>
-              SEPETTEKİ ÜRÜNLER ({cart.lines.length})
-            </Text>
+            <Stack direction="row" justify="space-between" align="center" style={{ marginBottom: spacing.xs }}>
+              <Text variant="caption" color="textMuted" style={{ letterSpacing: 1 }}>
+                SEPET
+              </Text>
+              <Text variant="caption" color="textMuted">
+                {cart.lines.length} ürün · {cartGroups.length} departman
+              </Text>
+            </Stack>
             <Stack gap="xs">
-              {cart.lines.map((line) => (
-                <Stack
-                  key={line.partId}
-                  direction="row"
-                  justify="space-between"
-                  align="center"
-                  style={{
-                    paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.sm,
-                    backgroundColor: colors.surface,
-                    borderRadius: radius.sm,
-                  }}
-                >
-                  <Text variant="body" numberOfLines={1} style={{ flex: 1 }}>
-                    {line.partName} <Text variant="caption" color="textMuted">× {line.qtyRequested}</Text>
-                  </Text>
-                  <Pressable
-                    onPress={() => cart.removeLine(line.partId)}
-                    style={{ minWidth: scale(32), minHeight: scale(32) }}
-                    accessibilityLabel={`${line.partName} sepetten çıkar`}
-                  >
-                    <Ionicons name="close" size={scale(18)} color={colors.danger} />
-                  </Pressable>
-                </Stack>
-              ))}
+              {cartGroups.map(([departmentId, lines]) => {
+                const expanded = expandedDepartments.has(departmentId);
+                const groupQty = lines.reduce((sum, line) => sum + line.qtyRequested, 0);
+                return (
+                  <Box key={departmentId} background="surface" radius="md" style={{ overflow: 'hidden' }}>
+                    <Pressable
+                      onPress={() => toggleDepartment(departmentId)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                        paddingHorizontal: spacing.md,
+                        paddingVertical: spacing.sm,
+                      }}
+                      accessibilityLabel={`${departmentNames[departmentId] ?? departmentId} kalemlerini ${expanded ? 'gizle' : 'göster'}`}
+                    >
+                      <Stack direction="row" align="center" gap="sm" style={{ flex: 1, marginRight: spacing.sm }}>
+                        <Ionicons name="business-outline" size={scale(16)} color={colors.blue} />
+                        <Text variant="bodyBold" numberOfLines={1} style={{ flex: 1 }}>
+                          {departmentNames[departmentId] ?? departmentId}
+                        </Text>
+                      </Stack>
+                      <Stack direction="row" align="center" gap="xs">
+                        <Text variant="caption" color="textMuted">
+                          {lines.length} kalem · {groupQty} adet
+                        </Text>
+                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(16)} color={colors.textMuted} />
+                      </Stack>
+                    </Pressable>
+
+                    {expanded && (
+                      <Box style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}>
+                        <Box style={{ height: 1, backgroundColor: colors.border, marginBottom: spacing.xs }} />
+                        <Stack gap="xs">
+                          {lines.map((line) => (
+                            <Stack key={line.partId} direction="row" justify="space-between" align="center">
+                              <Text variant="body" numberOfLines={1} style={{ flex: 1 }}>
+                                {line.partName} <Text variant="caption" color="textMuted">× {line.qtyRequested}</Text>
+                              </Text>
+                              <Pressable
+                                onPress={() => cart.removeLine(line.partId)}
+                                style={{ minWidth: scale(32), minHeight: scale(32) }}
+                                accessibilityLabel={`${line.partName} sepetten çıkar`}
+                              >
+                                <Ionicons name="close" size={scale(18)} color={colors.danger} />
+                              </Pressable>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })}
             </Stack>
           </Box>
         )}
-      </View>
+      </ScrollView>
 
       <Box padding="md" style={{ paddingTop: 0, paddingBottom: insets.bottom + spacing.md }}>
         <Button

@@ -1,11 +1,11 @@
-// src/screens/saha-personeli/DeliveryConfirmScreen.tsx
+// src/screens/uretim-yoneticisi/DeliveryConfirmScreen.tsx
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonActions, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Request } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
@@ -18,9 +18,10 @@ import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 import { scale } from '../../design-system/tokens/scale';
 import { readCardUid, isNfcSupported, cancelReading } from '../../infrastructure/nfc/NfcReader';
+import { cardDetectedFeedback } from '../../design-system/feedback';
 
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
-type Rt = RouteProp<SahaPersoneliStackParamList, 'DeliveryConfirm'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'DeliveryConfirm'>;
+type Rt = RouteProp<UretimYoneticisiStackParamList, 'DeliveryConfirm'>;
 
 type Step = 'idle' | 'reading' | 'mismatch' | 'unsupported' | 'confirming';
 
@@ -65,6 +66,9 @@ export default function DeliveryConfirmScreen() {
     setStep('reading');
     try {
       const scannedUid = await readCardUid();
+      // Kart algılanır algılanmaz (eşleşme kontrolünden ÖNCE) titreşim + ses —
+      // kullanıcı kartı okuyucuya basılı tutmaya devam etmesin.
+      void cardDetectedFeedback();
       if (scannedUid !== user.cardUid) {
         setStep('mismatch');
         return;

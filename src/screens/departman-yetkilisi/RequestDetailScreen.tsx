@@ -17,6 +17,7 @@ import { PriorityBadge, Priority } from '../../design-system/components/Priority
 import { ConfirmSheet } from '../../design-system/components/ConfirmSheet';
 import { RequestStatusStrip } from '../../design-system/components/RequestStatusStrip';
 import { LoadingView } from '../../design-system/components/LoadingView';
+import { EmptyState } from '../../design-system/components/EmptyState';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
 import { getRequestById, updateRequestStatus, fulfillRequest } from '../../api/requests';
@@ -50,10 +51,14 @@ export default function RequestDetailScreen() {
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [partialModalVisible, setPartialModalVisible] = useState(false);
   const [partialQty, setPartialQty] = useState('');
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     getRequestById(route.params.requestId).then(async (req) => {
-      if (!req) return;
+      if (!req) {
+        setNotFound(true);
+        return;
+      }
       setRequest(req);
       const [product] = await getProductsByIds([req.productId]);
       setProductName(product?.name ?? '');
@@ -103,6 +108,20 @@ export default function RequestDetailScreen() {
     navigation.goBack();
   };
 
+  if (notFound) {
+    return (
+      <Box style={{ flex: 1 }} background="white">
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Talep bulunamadı"
+          description="Bu talep artık mevcut değil — silinmiş olabilir."
+          actionLabel="Geri Dön"
+          onAction={() => navigation.goBack()}
+        />
+      </Box>
+    );
+  }
+
   if (!request) return <LoadingView />;
 
   const next = nextStatusMap[request.status];
@@ -144,6 +163,8 @@ export default function RequestDetailScreen() {
         </Box>
 
         <Box background="surface" radius="md" style={{ marginTop: spacing.md }}>
+          <DetailRow label="Talep Eden" value={request.requesterName ?? request.requesterId} />
+          <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />
           <DetailRow label="Adet" value={`${request.quantity} adet`} />
 {request.fulfilledQuantity !== undefined && request.fulfilledQuantity > 0 && request.fulfilledQuantity < request.quantity && (            <>
               <Box style={{ height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md }} />

@@ -1,6 +1,6 @@
 // src/screens/shared/NotificationsScreen.tsx
 import { useEffect, useState } from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import { Q } from '@nozbe/watermelondb';
 import { database } from '../../infrastructure/db';
 import NotificationRecord from '../../infrastructure/db/models/Notification';
 import { markNotificationAsRead, markAllNotificationsAsRead } from '../../infrastructure/notifications/notificationService';
+import { getRequestById } from '../../api/requests';
 import { useAuthStore } from '../../store/authStore';
 import { useCallback } from 'react';
 
@@ -54,9 +55,20 @@ export default function NotificationsScreen() {
     await markNotificationAsRead(item.id);
     load();
     if (!user) return;
+
+    // Bildirim eski olabilir — talep o aralar webden silinmiş olabilir.
+    // Var olmayan bir talebin detayına gitmeye çalışmak yerine, önce hâlâ
+    // var mı diye bakıyoruz (aksi halde detay ekranı sonsuza kadar
+    // yükleniyor kalırdı).
+    const request = await getRequestById(item.requestId);
+    if (!request) {
+      Alert.alert('Talep bulunamadı', 'Bu talep artık mevcut değil — silinmiş olabilir.');
+      return;
+    }
+
     if (user.role === 'departman_yetkilisi') {
       (navigation as any).navigate('RequestDetail', { requestId: item.requestId });
-    } else if (user.role === 'saha_personeli') {
+    } else if (user.role === 'uretim_yoneticisi') {
       (navigation as any).navigate('RequestTracking', { requestId: item.requestId });
     }
   };

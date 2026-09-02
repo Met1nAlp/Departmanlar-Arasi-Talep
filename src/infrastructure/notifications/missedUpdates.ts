@@ -22,7 +22,7 @@ export async function checkMissedUpdates(database: Database): Promise<MissedUpda
   const params =
     user.role === 'departman_yetkilisi'
       ? { departmentId: user.departmentId }
-      : user.role === 'saha_personeli'
+      : user.role === 'uretim_yoneticisi'
         ? { userId: user.id }
         : null;
   if (!params) return [];

@@ -15,7 +15,7 @@ appId: com.anonymous.talepuygulamasi
     id: "login-submit"
 - assertVisible: "Kimsiniz?"
 - tapOn:
-    id: "pin-member-user-saha_personeli"
+    id: "pin-member-user-uretim_yoneticisi"
 - tapOn:
     id: "pin-key-1"
 - tapOn:

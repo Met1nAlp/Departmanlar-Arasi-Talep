@@ -1,11 +1,11 @@
-// src/screens/saha-personeli/ProductSearchScreen.tsx
+// src/screens/uretim-yoneticisi/ProductSearchScreen.tsx
 import { useEffect, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Product } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
@@ -18,7 +18,7 @@ import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import { getAllProducts } from '../../api/products';
 
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'ProductSearch'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'ProductSearch'>;
 
 export default function ProductSearchScreen() {
   const navigation = useNavigation<Nav>();

@@ -23,11 +23,11 @@ function openDeviceInfoSettings() {
 
 export default function DeviceUnauthorizedScreen() {
   const deviceUid = useDeviceStore((s) => s.deviceUid);
-  const setMacAddress = useDeviceStore((s) => s.setMacAddress);
-  const clearMacAddress = useDeviceStore((s) => s.clearMacAddress);
+  const setSerialNumber = useDeviceStore((s) => s.setSerialNumber);
+  const clearSerialNumber = useDeviceStore((s) => s.clearSerialNumber);
   const insets = useSafeAreaInsets();
-  
-  const [macInput, setMacInput] = useState('');
+
+  const [serialInput, setSerialInput] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
   
   // YENİ: Otomatik denemenin yapılıp yapılmadığını takip eden state
@@ -36,7 +36,7 @@ export default function DeviceUnauthorizedScreen() {
   // YENİ: Sayfa ilk açıldığında çalışacak otomatik kontrol mekanizması
   useEffect(() => {
     async function performInitialCheck() {
-      // Eğer cihazda kayıtlı bir MAC varsa ve henüz otomatik kontrol yapmadıysak:
+      // Eğer cihazda kayıtlı bir seri numarası varsa ve henüz otomatik kontrol yapmadıysak:
       if (deviceUid && !autoCheckDone) {
         setIsConnecting(true);
         try {
@@ -51,7 +51,7 @@ export default function DeviceUnauthorizedScreen() {
           setAutoCheckDone(true); // Kontrol bitti, artık arayüzü gösterebiliriz.
         }
       } else if (!deviceUid) {
-        // Hiç MAC adresi kayıtlı değilse, kontrol etmeye gerek yok direkt formu göster
+        // Hiç seri numarası kayıtlı değilse, kontrol etmeye gerek yok direkt formu göster
         setAutoCheckDone(true);
       }
     }
@@ -76,24 +76,23 @@ export default function DeviceUnauthorizedScreen() {
     );
   }
 
-  // EKRAN 2: MAC adresi hiç girilmemişse gösterilecek form
+  // EKRAN 2: Seri numarası hiç girilmemişse gösterilecek form
   if (!deviceUid) {
     return (
       <Box style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }} background="white">
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text variant="h2" style={{ textAlign: 'center' }}>
-            Cihazın MAC Adresini Girin
+            Cihazın Seri Numarasını Girin
           </Text>
           <Text variant="body" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.sm }}>
-            Ayarlar → Telefon Hakkında → Durum Bilgileri altındaki Wi-Fi MAC
-            Adresini girin.
+            Ayarlar → Telefon Hakkında altındaki Seri Numarasını girin.
           </Text>
 
           <Box style={{ marginTop: spacing.lg }}>
             <TextField
-              placeholder="A4:C3:F0:12:34:56"
-              value={macInput}
-              onChangeText={setMacInput}
+              placeholder="Seri Numarası"
+              value={serialInput}
+              onChangeText={setSerialInput}
               autoCapitalize="characters"
               autoCorrect={false}
             />
@@ -105,12 +104,12 @@ export default function DeviceUnauthorizedScreen() {
             variant="secondary"
             style={{ marginTop: spacing.md, width: '100%' }}
           />
-          
+
           <Button
             label="Kaydet ve Bağlan"
             onPress={async () => {
               setIsConnecting(true);
-              await setMacAddress(macInput);
+              await setSerialNumber(serialInput);
               try {
                 await connectMepsanServer();
               } catch (error) {
@@ -119,7 +118,7 @@ export default function DeviceUnauthorizedScreen() {
                 setIsConnecting(false);
               }
             }}
-            disabled={macInput.trim().length === 0}
+            disabled={serialInput.trim().length === 0}
             style={{ marginTop: spacing.sm, width: '100%' }}
           />
         </View>
@@ -127,7 +126,7 @@ export default function DeviceUnauthorizedScreen() {
     );
   }
 
-  // EKRAN 3: MAC var, otomatik kontrol yapıldı ama sunucu reddetti.
+  // EKRAN 3: Seri numarası var, otomatik kontrol yapıldı ama sunucu reddetti.
   return (
     <Box style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }} background="white">
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -135,7 +134,7 @@ export default function DeviceUnauthorizedScreen() {
           Bu cihaz yetkili değil
         </Text>
         <Text variant="body" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.sm }}>
-          Aşağıdaki MAC adresinin MEPSAN veritabanına eklendiğinden emin olun.
+          Aşağıdaki seri numarasının MEPSAN veritabanına eklendiğinden emin olun.
         </Text>
         <Box background="surface" radius="md" padding="md" style={{ marginTop: spacing.lg, width: '100%' }}>
           <Text variant="bodyBold" style={{ textAlign: 'center' }}>
@@ -143,8 +142,8 @@ export default function DeviceUnauthorizedScreen() {
           </Text>
         </Box>
         <Button
-          label="MAC Adresini Değiştir"
-          onPress={() => clearMacAddress()}
+          label="Seri Numarasını Değiştir"
+          onPress={() => clearSerialNumber()}
           variant="secondary"
           style={{ marginTop: spacing.md, width: '100%' }}
         />

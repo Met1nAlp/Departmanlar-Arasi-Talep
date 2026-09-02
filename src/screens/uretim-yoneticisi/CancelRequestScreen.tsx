@@ -3,7 +3,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
 import { Text } from '../../design-system/primitives/Text';
@@ -17,8 +17,8 @@ import { getRequestById, cancelRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
 import { Request } from '../../types';
 
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'CancelRequest'>;
-type Rt = RouteProp<SahaPersoneliStackParamList, 'CancelRequest'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'CancelRequest'>;
+type Rt = RouteProp<UretimYoneticisiStackParamList, 'CancelRequest'>;
 
 const cancelReasons = [
   'Yanlış ürün seçtim',

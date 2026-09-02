@@ -1,6 +1,6 @@
 // src/screens/departman-yetkilisi/IncomingRequestsScreen.tsx
 import { useCallback, useState } from 'react';
-import { FlatList } from 'react-native';
+import { FlatList, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -54,21 +54,31 @@ export default function IncomingRequestsScreen() {
   const [products, setProducts] = useState<Record<string, string>>({});
   const [departmentName, setDepartmentName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<Filter>('aktif');
+
+  const loadRequests = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (!user?.departmentId) return;
+      if (mode === 'refresh') setRefreshing(true);
+      const [reqs, departments] = await Promise.all([
+        getRequests({ departmentId: user.departmentId }),
+        getDepartments(),
+      ]);
+      setRequests(reqs);
+      setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
+      const productList = await getProductsByIds(reqs.map((r) => r.productId));
+      setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
+      setLoading(false);
+      setRefreshing(false);
+    },
+    [user]
+  );
 
   useFocusEffect(
     useCallback(() => {
-      if (!user?.departmentId) return;
-      Promise.all([getRequests({ departmentId: user.departmentId }), getDepartments()]).then(
-        async ([reqs, departments]) => {
-          setRequests(reqs);
-          setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
-          const productList = await getProductsByIds(reqs.map((r) => r.productId));
-          setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
-          setLoading(false);
-        }
-      );
-    }, [user])
+      loadRequests('initial');
+    }, [loadRequests])
   );
 
   useRequestUpdates((updated) => {
@@ -174,6 +184,14 @@ export default function IncomingRequestsScreen() {
         data={sortedRequests}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadRequests('refresh')}
+            tintColor={colors.blue}
+            colors={[colors.blue]}
+          />
+        }
         renderItem={({ item }) => {
           const priority = item.priority;
           return (

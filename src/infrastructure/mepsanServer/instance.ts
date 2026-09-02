@@ -3,11 +3,9 @@
 // MepsanServerClient'ın uygulama genelindeki TEK örneği (RealtimeClient/
 // OutboxWorker singleton'larıyla aynı desen).
 //
-// MAC ADRESİ NOTU (geçici — Adım 6'ya kadar): backend her mesajda gerçek bir
-// mac_address bekliyor ama uygulamada henüz gerçek bir MAC/cihaz-kimlik akışı
-// yok. Şimdilik deviceStore.deviceUid'i (zaten var olan, kalıcı üretilmiş
-// cihaz kimliği) mac_address YERİNE geçici olarak kullanıyoruz. Adım 6'da
-// gerçek MAC modeline geçilince burada tek satır değişecek.
+// SERİ NUMARASI NOTU: backend artık MAC adresi değil, cihazın seri numarasını
+// (serial_number) bekliyor. deviceStore.deviceUid alanı, kullanıcının elle
+// girdiği seri numarasını tutar ve her mesajda serial_number olarak gönderilir.
 //
 // OLAY KÖPRÜSÜ: Sunucunun REQUEST_CREATED/REQUEST_STATUS_UPDATED broadcast'leri,
 // orijinal komutun (snake_case, EKSİK alanlı) ham gövdesini taşıyor — tam bir
@@ -17,18 +15,26 @@
 // — bunun yerine id'yi alıp GET_REQUESTS ile talebi TAM haliyle yeniden
 // çekiyoruz, sonra emitRequestStatusChanged'a onu veriyoruz. Ekstra bir
 // round-trip ama tek doğru kaynak (Request tipini asla eksik/hatalı doldurmuyoruz).
+//
+// USER_DELETED (henüz backend'de YOK — Barış eklemeli): bir kullanıcı
+// veritabanından silindiğinde sunucu diğer broadcast'lerle aynı zarfla
+// { type: "event", event_name: "USER_DELETED", payload: { id } } yayınlamalı.
+// Mobil taraf bunu aşağıda dinliyor; backend event'i göndermeye başladığı an
+// hiçbir kod değişikliği gerekmeden devreye girer.
 
+import { Alert } from 'react-native';
 import { MepsanServerClient, type MepsanEventEnvelope } from './MepsanServerClient';
 import { MEPSAN_SERVER_URL, isMepsanServerConfigured, MEPSAN_DEFAULT_PASSKEY } from '../../config/mepsanServerConfig';
 import { mapServerRequestToRequest } from './mappers';
 import { emitRequestStatusChanged } from '../../api/socketEvents';
 import { useDeviceStore } from '../../store/deviceStore';
 import { useConnectionStore } from '../../store/connectionStore';
+import { useAuthStore } from '../../store/authStore';
 import { User } from '../../types';
 
 export const mepsanServerClient = new MepsanServerClient({
   url: MEPSAN_SERVER_URL,
-  getMacAddress: () => useDeviceStore.getState().deviceUid,
+  getSerialNumber: () => useDeviceStore.getState().deviceUid,
 });
 
 // Plan Bölüm 9.2 deseniyle tutarlı: bağlantı durumu her zaman görünür olmalı.
@@ -44,6 +50,16 @@ export async function fetchRequestById(id: string) {
 }
 
 mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
+  if (event.event_name === 'USER_DELETED') {
+    const deletedUserId = String(event.payload?.id ?? '');
+    const currentUser = useAuthStore.getState().currentUser;
+    if (deletedUserId && currentUser && String(currentUser.id) === deletedUserId) {
+      useAuthStore.getState().logout();
+      Alert.alert('Hesabınız kaldırıldı', 'Hesabınız sistemden kaldırıldı. Devam etmek için tekrar giriş yapmanız gerekiyor.');
+    }
+    return;
+  }
+
   if (event.event_name !== 'REQUEST_CREATED' && event.event_name !== 'REQUEST_STATUS_UPDATED') return;
   const id = event.payload?.id;
   if (typeof id !== 'string' || !id) return;
@@ -53,9 +69,9 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
   });
 });
 
-// AUTH_REQUEST'e artık gerek yok — MAC, Barış tarafından doğrudan
+// AUTH_REQUEST'e artık gerek yok — seri numarası, Barış tarafından doğrudan
 // veritabanına ekleniyor (kayıt kodu/onboarding akışı yok). Sunucu, her
-// komutta mac_address'i isMacAuthorized ile kontrol ediyor; MAC tabloda
+// komutta serial_number'ı kontrol ediyor; seri numarası tabloda
 // varsa herhangi bir komut (CARD_LOGIN dahil) zaten çalışır. Bu yüzden
 // burada sadece WebSocket bağlantısını kuruyoruz — asıl "yetkili mi değil
 // mi" sorusunun gerçek cevabı, ilk komut (CardLoginScreen'deki CARD_LOGIN)

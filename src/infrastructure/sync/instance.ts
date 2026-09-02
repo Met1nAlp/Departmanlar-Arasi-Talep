@@ -14,14 +14,13 @@ import { database } from '../db';
 import { OutboxWorker, type Dispatch } from './OutboxWorker';
 import { useConnectionStore } from '../../store/connectionStore';
 import { mepsanServerClient } from '../mepsanServer/instance';
-import { buildCreateRequestPayload } from '../mepsanServer/mappers';
-import type { Request } from '../../types';
+import { buildCreateOrderPayload, type CreateOrderPayload } from '../mepsanServer/mappers';
 
 const dispatch: Dispatch = async (entry) => {
   if (entry.operation === 'CREATE_REQUEST') {
     const response = await mepsanServerClient.send(
       'CREATE_REQUEST',
-      buildCreateRequestPayload(entry.payload as Request)
+      buildCreateOrderPayload(entry.payload as CreateOrderPayload)
     );
     if (response.status === 'ok') return { ok: true };
     return { ok: false, statusCode: 422, message: response.message ?? 'CREATE_REQUEST reddedildi' };

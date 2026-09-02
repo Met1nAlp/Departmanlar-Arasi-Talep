@@ -1,10 +1,10 @@
-// src/screens/saha-personeli/RequestTrackingScreen.tsx
+// src/screens/uretim-yoneticisi/RequestTrackingScreen.tsx
 import { useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Request } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
@@ -12,6 +12,7 @@ import { Text } from '../../design-system/primitives/Text';
 import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { LoadingView } from '../../design-system/components/LoadingView';
+import { EmptyState } from '../../design-system/components/EmptyState';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
 import { colors, spacing, statusTokens } from '../../design-system/tokens';
 import { getRequestById } from '../../api/requests';
@@ -20,8 +21,8 @@ import { useRequestUpdates } from '../../hooks/useRequestUpdates';
 import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 
-type Rt = RouteProp<SahaPersoneliStackParamList, 'RequestTracking'>;
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'RequestTracking'>;
+type Rt = RouteProp<UretimYoneticisiStackParamList, 'RequestTracking'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'RequestTracking'>;
 
 const STEP_TIMESTAMP_KEY: Record<string, keyof Request | undefined> = {
   TALEP_ALINDI: 'createdAt',
@@ -45,10 +46,14 @@ export default function RequestTrackingScreen() {
   const user = useActiveUser();
   const [request, setRequest] = useState<Request | null>(null);
   const [productName, setProductName] = useState<string>('');
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     getRequestById(route.params.requestId).then(async (req) => {
-      if (!req) return;
+      if (!req) {
+        setNotFound(true);
+        return;
+      }
       setRequest(req);
       const products = await getProductsByIds([req.productId]);
       setProductName(products[0]?.name ?? '');
@@ -56,6 +61,20 @@ export default function RequestTrackingScreen() {
   }, [route.params.requestId]);
 
   useRequestUpdates(setRequest, route.params.requestId);
+
+  if (notFound) {
+    return (
+      <Box style={{ flex: 1 }} background="white">
+        <EmptyState
+          icon="alert-circle-outline"
+          title="Talep bulunamadı"
+          description="Bu talep artık mevcut değil — silinmiş olabilir."
+          actionLabel="Geri Dön"
+          onAction={() => navigation.goBack()}
+        />
+      </Box>
+    );
+  }
 
   if (!request) return <LoadingView />;
 

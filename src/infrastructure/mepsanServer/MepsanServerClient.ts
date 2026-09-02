@@ -6,9 +6,9 @@
 // başı notu), bu yüzden ondan hiçbir şey import etmiyoruz.
 //
 // Sunucu protokolü (serverhandler.cpp'den doğrulandı):
-//   - Her mesaj JSON: { command, mac_address, ...alanlar }, mac_address HER
+//   - Her mesaj JSON: { command, serial_number, ...alanlar }, serial_number HER
 //     mesajda zorunlu (AUTH_REQUEST dahil).
-//   - AUTH_REQUEST dışında hiçbir komut, MAC yetkilendirilmeden çalışmaz.
+//   - AUTH_REQUEST dışında hiçbir komut, seri numarası yetkilendirilmeden çalışmaz.
 //   - Cevaplar { status: "ok"|"error", message, ... } şeklinde ama bir istek
 //     kimliği (id) TAŞIMIYOR — cevaplar gönderilme sırasına göre gelir
 //     (FIFO). Bu yüzden pending kuyruğu FIFO sırayla eşleştirilir.
@@ -43,7 +43,7 @@ interface PendingRequest {
 export interface MepsanServerClientOptions {
   url: string;
   /** Adım 6'ya kadar geçici olarak deviceStore.deviceUid döner (bkz. instance.ts). */
-  getMacAddress: () => string | null;
+  getSerialNumber: () => string | null;
   requestTimeoutMs?: number; // varsayılan 10_000
 }
 
@@ -133,7 +133,7 @@ export class MepsanServerClient {
   }
 
   /**
-   * Bir komut gönderir, mac_address'i otomatik ekler, cevabı FIFO sırayla
+   * Bir komut gönderir, serial_number'ı otomatik ekler, cevabı FIFO sırayla
    * bekler. `payload` zaten snake_case alan adlarıyla gelmeli (mappers.ts).
    */
   send(command: string, payload: Record<string, unknown> = {}): Promise<MepsanResponse> {
@@ -141,12 +141,12 @@ export class MepsanServerClient {
       return Promise.reject(new Error('Sunucuya bağlı değil'));
     }
 
-    const macAddress = this.options.getMacAddress();
-    if (!macAddress) {
-      return Promise.reject(new Error('MAC adresi (cihaz kimliği) henüz hazır değil'));
+    const serialNumber = this.options.getSerialNumber();
+    if (!serialNumber) {
+      return Promise.reject(new Error('Seri numarası (cihaz kimliği) henüz hazır değil'));
     }
 
-    const message = { command, mac_address: macAddress, ...payload };
+    const message = { command, serial_number: serialNumber, ...payload };
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -169,7 +169,7 @@ export class MepsanServerClient {
   }
 
   /**
-   * AUTH_REQUEST gönderir. Sunucuda mac_address UNIQUE olduğu için, zaten
+   * AUTH_REQUEST gönderir. Sunucuda serial_number UNIQUE olduğu için, zaten
    * yetkilendirilmiş bir cihaz için tekrar çağrılırsa sunucu "Cihaz
    * kaydedilemedi" hatası döner (INSERT çakışması) — bu GERÇEK bir hata
    * değil, "zaten yetkili" anlamına gelir, o yüzden ayrı ele alınır.
@@ -185,7 +185,7 @@ export class MepsanServerClient {
 
     const message = String(response.message ?? '');
     if (message.includes('kaydedilemedi')) {
-      // MAC zaten pos_devices tablosunda kayıtlı (UNIQUE çakışması) — zaten yetkili sayılır.
+      // Seri numarası zaten pos_devices tablosunda kayıtlı (UNIQUE çakışması) — zaten yetkili sayılır.
       return true;
     }
     // Örn. "Dogrulama Basarisiz. Sifre hatali." — gerçek bir yetkilendirme hatası.

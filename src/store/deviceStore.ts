@@ -2,7 +2,7 @@
 //
 // NFC modeline geçişle birlikte "kayıt kodu" akışı KALDIRILDI. Cihaz kimliği
 // (deviceUid) hâlâ kalıcı olarak üretilip saklanıyor — MepsanServerClient'in
-// AUTH_REQUEST'te mac_address yerine kullandığı geçici kimlik bu. Yetkilendirme
+// her mesajda serial_number olarak gönderdiği kimlik bu. Yetkilendirme
 // artık burada değil, doğrudan mepsanServerClient.authenticate() ile,
 // uygulama açılışında otomatik yapılıyor (bkz. mepsanServer/instance.ts).
 
@@ -17,15 +17,14 @@ interface DeviceState {
   isLoading: boolean;
   hydrate: () => Promise<void>;
   /**
-   * Kullanıcının Ayarlar'dan bulup elle girdiği GERÇEK MAC adresi. Uygulama
-   * gerçek MAC'i işletim sistemi kısıtı yüzünden okuyamıyor (Android 6+/iOS
-   * hepsi engelliyor) — bu yüzden bir kereliğine elle giriliyor, kalıcı
-   * saklanıyor. Barış'ın veritabanı BÜYÜK HARF bekliyor — kullanıcı küçük
-   * de yazsa burada otomatik büyük harfe çevriliyor, format hatası riski
-   * kullanıcıya bırakılmıyor.
+   * Kullanıcının Ayarlar'dan bulup elle girdiği cihaz SERİ NUMARASI. Uygulama
+   * seri numarasını işletim sistemi kısıtı yüzünden otomatik okuyamıyor — bu
+   * yüzden bir kereliğine elle giriliyor, kalıcı saklanıyor. Barış'ın
+   * veritabanı BÜYÜK HARF bekliyor — kullanıcı küçük de yazsa burada otomatik
+   * büyük harfe çevriliyor, format hatası riski kullanıcıya bırakılmıyor.
    */
-  setMacAddress: (mac: string) => Promise<void>;
-  clearMacAddress: () => Promise<void>;
+  setSerialNumber: (serialNumber: string) => Promise<void>;
+  clearSerialNumber: () => Promise<void>;
 }
 
 export const useDeviceStore = create<DeviceState>((set) => ({
@@ -36,19 +35,19 @@ export const useDeviceStore = create<DeviceState>((set) => ({
     set({ isLoading: true });
     try {
       const deviceUid = await getSecureItem(SECURE_STORAGE_KEYS.deviceUid);
-      set({ deviceUid, isLoading: false }); // null olabilir — MAC henüz girilmemiş demektir
+      set({ deviceUid, isLoading: false }); // null olabilir — seri numarası henüz girilmemiş demektir
     } catch {
       set({ isLoading: false });
     }
   },
 
-  setMacAddress: async (mac: string) => {
-    const normalized = mac.trim().toUpperCase();
+  setSerialNumber: async (serialNumber: string) => {
+    const normalized = serialNumber.trim().toUpperCase();
     await setSecureItem(SECURE_STORAGE_KEYS.deviceUid, normalized);
     set({ deviceUid: normalized });
   },
 
-  clearMacAddress: async () => {
+  clearSerialNumber: async () => {
     await setSecureItem(SECURE_STORAGE_KEYS.deviceUid, '');
     set({ deviceUid: null });
   },

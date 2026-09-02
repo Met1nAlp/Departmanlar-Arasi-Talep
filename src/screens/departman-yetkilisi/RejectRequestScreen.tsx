@@ -24,7 +24,7 @@ type Nav = NativeStackNavigationProp<DepartmanYetkilisiStackParamList, 'RejectRe
 type Rt = RouteProp<DepartmanYetkilisiStackParamList, 'RejectRequest'>;
 
 // Tedarikçi tarafına özgü red nedenleri — CancelRequestScreen'deki
-// "Saha Personeli" nedenlerinden kasıtlı olarak farklı bir liste.
+// "Üretim Yöneticisi" nedenlerinden kasıtlı olarak farklı bir liste.
 // Efe'nin backend'i bunu enum olarak tanımlayınca (RequestRejectReason)
 // buradan import edeceğiz, şimdilik sabit tutuyoruz.
 const rejectReasons = [

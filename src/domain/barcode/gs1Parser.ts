@@ -5,7 +5,7 @@
 // öneki taşıyan) çözümlenir. Kendi ürettiğimiz düz QR kodlar (yalnızca ürün
 // kimliği) ve fabrika EAN/UPC barkodları bu parser'a hiç girmez — onlar
 // api/products.ts'teki mevcut getProductByQrCode akışında kalır (bkz.
-// screens/saha-personeli/QRScanScreen.tsx: parseGs1Barcode önce denenir,
+// screens/uretim-yoneticisi/QRScanScreen.tsx: parseGs1Barcode önce denenir,
 // null dönerse eski davranışa düşülür).
 //
 // Referans: GS1 General Specifications — desteklenen AI'lar bu projenin

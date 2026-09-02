@@ -27,7 +27,7 @@ import { canAcknowledgeOrPrepare, canClose, canCreate, type PolicyContext } from
 // Bu tipler src/types/index.ts ile birebir aynı tutulur (import etmiyoruz ki
 // domain katmanı legacy tiplere bağımlı olmasın — sadece string literal paylaşıyoruz).
 export type LegacyStatus = 'TALEP_ALINDI' | 'HAZIRLANIYOR' | 'HAZIR' | 'YOLDA' | 'TESLIM_EDILDI' | 'IPTAL_EDILDI' | 'REDDEDILDI';
-export type LegacyRole = 'saha_personeli' | 'departman_yetkilisi' | 'yonetici';
+export type LegacyRole = 'uretim_yoneticisi' | 'departman_yetkilisi' | 'yonetici';
 
 export const LEGACY_TO_DOMAIN_STATE: Record<LegacyStatus, string> = {
   TALEP_ALINDI: 'PENDING',

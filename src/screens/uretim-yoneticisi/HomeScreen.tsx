@@ -1,4 +1,4 @@
-// src/screens/saha-personeli/HomeScreen.tsx
+// src/screens/uretim-yoneticisi/HomeScreen.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { SahaPersoneliStackParamList } from '../../navigation/types';
+import { UretimYoneticisiStackParamList } from '../../navigation/types';
 import { Request, Department } from '../../types';
 import { Box } from '../../design-system/primitives/Box';
 import { Stack } from '../../design-system/primitives/Stack';
@@ -34,7 +34,7 @@ import { useCartStore } from '../../store/cartStore';
 import { canCreateLegacyRequest } from '../../domain/request/legacyAdapter';
 import { NotificationBell } from '../../design-system/components/NotificationBell';
 
-type Nav = NativeStackNavigationProp<SahaPersoneliStackParamList, 'Home'>;
+type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'Home'>;
 
 type Filter = 'aktif' | 'tamamlanan';
 

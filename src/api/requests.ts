@@ -4,7 +4,7 @@ import { mockRequests } from '../mocks/requests';
 import { emitRequestStatusChanged } from './socketEvents';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 import { mepsanServerClient, fetchRequestById } from '../infrastructure/mepsanServer/instance';
-import { mapServerRequestToRequest, buildUpdateStatusPayload, buildCancelRequestPayload, buildRejectRequestPayload, buildFulfillRequestPayload } from '../infrastructure/mepsanServer/mappers';
+import { mapServerRequestToRequest, buildUpdateStatusPayload, buildCancelRequestPayload, buildRejectRequestPayload, buildFulfillRequestPayload, type CreateOrderPayload } from '../infrastructure/mepsanServer/mappers';
 import { database } from '../infrastructure/db';
 import { recordOwnStatusChange } from '../infrastructure/notifications/knownStatusStore';
 
@@ -36,30 +36,57 @@ export async function getRequestById(id: string): Promise<Request | undefined> {
   return mockRequests.find((r) => r.id === id);
 }
 
-export async function createRequest(input: {
+/**
+ * Sepet (çoklu eşya) siparişi oluşturur. Sepetteki TÜM eşyalar (aynı
+ * departmana ait olmalı — bir siparişin tek bir supplier departmanı vardır)
+ * tek bir order_id altında, TEK bir CREATE_REQUEST mesajıyla (items dizisi
+ * ile) sunucuya gönderilir. Yerelde her eşya için ayrı bir Request kaydı
+ * tutulmaya devam eder (mevcut takip ekranları eşya bazlı çalışıyor) —
+ * hepsi aynı orderId'yi taşır, aralarındaki bağ bununla kurulur.
+ */
+export async function createOrder(input: {
   departmentId: string;
-  productId: string;
-  quantity: number;
+  items: { productId: string; quantity: number }[];
   requesterId: string;
   requesterName?: string;
   priority: 'ACIL' | 'NORMAL';
-}): Promise<Request> {
-  const newRequest: Request = {
-    id: `r-${Date.now()}`,
-    ...input,
+}): Promise<Request[]> {
+  const orderId = `ORD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const createdAt = new Date().toISOString();
+
+  const newRequests: Request[] = input.items.map((item, index) => ({
+    id: `r-${Date.now()}-${index}`,
+    orderId,
+    requesterId: input.requesterId,
+    requesterName: input.requesterName,
+    departmentId: input.departmentId,
+    productId: item.productId,
+    quantity: item.quantity,
+    priority: input.priority,
     status: 'TALEP_ALINDI',
     deliveryMethod: 'elektrikli_transpalet',
-    createdAt: new Date().toISOString(),
-  };
-  mockRequests.push(newRequest); // optimistic update — sunucu onayı beklenmez
-  emitRequestStatusChanged(newRequest);
+    createdAt,
+  }));
 
-  await outboxWorker.enqueue('CREATE_REQUEST', newRequest.id, newRequest);
+  newRequests.forEach((request) => {
+    mockRequests.push(request); // optimistic update — sunucu onayı beklenmez
+    emitRequestStatusChanged(request);
+  });
+
+  const orderPayload: CreateOrderPayload = {
+    orderId,
+    requesterId: input.requesterId,
+    departmentId: input.departmentId,
+    status: 'TALEP_ALINDI',
+    createdAt,
+    items: input.items,
+  };
+  await outboxWorker.enqueue('CREATE_REQUEST', orderId, orderPayload);
   await refreshPendingSyncBadge();
   void outboxWorker.processQueue().then(refreshPendingSyncBadge);
-  await recordOwnStatusChange(database, newRequest.id, newRequest.status);
+  await Promise.all(newRequests.map((request) => recordOwnStatusChange(database, request.id, request.status)));
 
-  return newRequest;
+  return newRequests;
 }
 
 export async function updateRequestStatus(current: Request, status: RequestStatus): Promise<Request> {

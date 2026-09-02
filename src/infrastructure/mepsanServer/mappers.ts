@@ -31,7 +31,11 @@ export function mapServerRequestToRequest(raw: Record<string, unknown>): Request
   return {
     id: String(raw.id ?? ''),
     requesterId: String(raw.requesterId ?? ''),
-    requesterName: cleanTimestamp(raw.requesterName),
+    // GET_REQUESTS camelCase döndürüyor (requesterName) ama Barış'ın
+    // requester_name alanını CARD_LOGIN/CREATE_REQUEST cevabına eklediği
+    // güncellemeyle bazı yollarda snake_case gelme ihtimaline karşı ikisini
+    // de kontrol ediyoruz — hangisi doluysa o kullanılır.
+    requesterName: cleanTimestamp(raw.requesterName) ?? cleanTimestamp(raw.requester_name),
     departmentId: String(raw.departmentId ?? ''),
     productId: String(raw.productId ?? ''),
     quantity: Number(raw.quantity ?? 0),
@@ -51,17 +55,36 @@ export function mapServerRequestToRequest(raw: Record<string, unknown>): Request
   };
 }
 
-export function buildCreateRequestPayload(request: Request): Record<string, unknown> {
+// ---------------------------------------------------------------------------
+// CREATE_REQUEST — Sepet (çoklu eşya) modeli. Eskiden her eşya kendi
+// CREATE_REQUEST'iyle (tekil product_id/quantity) gönderiliyordu; artık aynı
+// sipariş içindeki TÜM eşyalar tek bir order_id altında `items` dizisiyle TEK
+// mesajda gidiyor (Barış'ın dokümanı, 2026-09-01). Dikkat: items elemanlarının
+// kendi id'si YOK — sunucu bunları order_id'ye bağlı olarak kendi üretiyor.
+// ---------------------------------------------------------------------------
+
+export interface CreateOrderItem {
+  productId: string;
+  quantity: number;
+}
+
+export interface CreateOrderPayload {
+  orderId: string;
+  requesterId: string;
+  departmentId: string;
+  status: RequestStatus;
+  createdAt: string;
+  items: CreateOrderItem[];
+}
+
+export function buildCreateOrderPayload(order: CreateOrderPayload): Record<string, unknown> {
   return {
-    id: request.id,
-    requester_id: request.requesterId,
-    requester_name: request.requesterName ?? '',
-    department_id: request.departmentId,
-    product_id: request.productId,
-    quantity: request.quantity,
-    priority: request.priority,
-    status: request.status,
-    created_at: request.createdAt,
+    order_id: order.orderId,
+    requester_id: order.requesterId,
+    department_id: order.departmentId,
+    status: order.status,
+    created_at: order.createdAt,
+    items: order.items.map((item) => ({ product_id: item.productId, qty: item.quantity })),
   };
 }
 

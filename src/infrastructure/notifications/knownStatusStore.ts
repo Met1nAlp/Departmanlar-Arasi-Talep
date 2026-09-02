@@ -76,6 +76,34 @@ export async function hasAnyKnownStatus(database: Database, userId: string): Pro
   return Object.keys(known).length > 0;
 }
 
+/**
+ * Bir talep sunucudan silindiğinde artık GET_REQUESTS'te dönmüyor — o yüzden
+ * "bu kullanıcıyı ilgilendiriyor mu" kararını Request objesi üzerinden
+ * (departmentId/requesterId) veremiyoruz. known map zaten SADECE ilgili
+ * (resolveNotificationForRequest'ten notify=true/false fark etmeksizin
+ * isConcerned geçmiş) talepleri tutuyor — bu yüzden requestId'nin burada
+ * bir anahtar olarak bulunması, "bu kullanıcı bu talebi biliyordu/ilgiliydi"
+ * demek için yeterli.
+ */
+export async function wasRequestKnownToUser(database: Database, requestId: string): Promise<boolean> {
+  const user = useAuthStore.getState().currentUser;
+  if (!user) return false;
+  const key = getKnownStatusesKey(user.id);
+  const known = await getKnownStatuses(database, key);
+  return requestId in known;
+}
+
+/** REQUEST_DELETED sonrası known map'ten temizlemek için — artık var olmayan bir talebin durumu takip edilmemeli. */
+export async function forgetKnownStatus(database: Database, requestId: string): Promise<void> {
+  const user = useAuthStore.getState().currentUser;
+  if (!user) return;
+  const key = getKnownStatusesKey(user.id);
+  const known = await getKnownStatuses(database, key);
+  if (!(requestId in known)) return;
+  delete known[requestId];
+  await saveKnownStatuses(database, key, known);
+}
+
 export interface NotificationDecision {
   notify: boolean;
   isNew: boolean; // true: bu talep bu kullanıcı için ilk kez görülüyor
@@ -96,7 +124,7 @@ export async function resolveNotificationForRequest(
 
   const isConcerned =
     (user.role === 'departman_yetkilisi' && request.departmentId === user.departmentId) ||
-    (user.role === 'saha_personeli' && request.requesterId === user.id);
+    (user.role === 'uretim_yoneticisi' && request.requesterId === user.id);
   if (!isConcerned) return { notify: false, isNew: false };
 
   const key = getKnownStatusesKey(user.id);

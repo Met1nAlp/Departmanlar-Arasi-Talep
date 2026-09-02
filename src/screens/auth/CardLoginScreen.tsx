@@ -13,6 +13,7 @@ import { parseCardLoginResponse, CardLoginRawResponse } from '../../infrastructu
 import { useAuthStore } from '../../store/authStore';
 import { scale } from '../../design-system/tokens/scale';
 import { Logo } from '../../design-system/components/Logo';
+import { successFeedback, errorFeedback, cardDetectedFeedback } from '../../design-system/feedback';
 
 type ScreenState = 'reading' | 'verifying' | 'error' | 'not_found' | 'unsupported';
 
@@ -33,19 +34,26 @@ export default function CardLoginScreen() {
       const cardUid = await readCardUid();
       const payload = { nfc_uid: cardUid };
 
+      // Kart algılandığı anda (sunucu cevabı gelmeden ÖNCE) titreşim + ses —
+      // kullanıcı kartı hâlâ okuyucuya basılı tutmaya devam etmesin, "Doğrulanıyor"
+      // ekranına geçtiğimizi hemen hissetsin.
+      void cardDetectedFeedback();
       setState('verifying');
 
       const response = await mepsanServerClient.send('CARD_LOGIN', payload);
       const result = parseCardLoginResponse(response as CardLoginRawResponse, cardUid);
 
       if (result.outcome !== 'success') {
+        void errorFeedback();
         setErrorMessage(result.message);
         setState(result.outcome === 'not_found' ? 'not_found' : 'error');
         return;
       }
 
+      void successFeedback();
       loginWithCardUser(result.user);
     } catch (error) {
+      void errorFeedback();
       setErrorMessage('Bağlantı hatası. Lütfen tekrar deneyin.');
       setState('error');
     }

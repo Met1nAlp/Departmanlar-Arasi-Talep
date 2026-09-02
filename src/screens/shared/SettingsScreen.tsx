@@ -18,7 +18,7 @@ import { useConnectionStore } from '../../store/connectionStore';
 import { useDeviceStore } from '../../store/deviceStore';
 
 const roleLabels: Record<string, string> = {
-  saha_personeli: 'Saha Personeli',
+  uretim_yoneticisi: 'Üretim Yöneticisi',
   departman_yetkilisi: 'Departman Yetkilisi',
   yonetici: 'Yönetici',
 };

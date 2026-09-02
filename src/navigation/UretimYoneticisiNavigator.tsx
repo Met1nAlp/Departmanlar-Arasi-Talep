@@ -1,20 +1,20 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors, typography } from '../constants/theme';
-import { SahaPersoneliStackParamList } from './types';
+import { UretimYoneticisiStackParamList } from './types';
 
-import HomeScreen from '../screens/saha-personeli/HomeScreen';
-import QRScanScreen from '../screens/saha-personeli/QRScanScreen';
-import RequestCreatedScreen from '../screens/saha-personeli/RequestCreatedScreen';
-import RequestTrackingScreen from '../screens/saha-personeli/RequestTrackingScreen';
-import DeliveryConfirmScreen from '../screens/saha-personeli/DeliveryConfirmScreen';
-import CancelRequestScreen from '../screens/saha-personeli/CancelRequestScreen';
-import ProductSearchScreen from '../screens/saha-personeli/ProductSearchScreen';
+import HomeScreen from '../screens/uretim-yoneticisi/HomeScreen';
+import QRScanScreen from '../screens/uretim-yoneticisi/QRScanScreen';
+import RequestCreatedScreen from '../screens/uretim-yoneticisi/RequestCreatedScreen';
+import RequestTrackingScreen from '../screens/uretim-yoneticisi/RequestTrackingScreen';
+import DeliveryConfirmScreen from '../screens/uretim-yoneticisi/DeliveryConfirmScreen';
+import CancelRequestScreen from '../screens/uretim-yoneticisi/CancelRequestScreen';
+import ProductSearchScreen from '../screens/uretim-yoneticisi/ProductSearchScreen';
 import SettingsScreen from '../screens/shared/SettingsScreen';
 import NotificationsScreen from '../screens/shared/NotificationsScreen';
 
-const Stack = createNativeStackNavigator<SahaPersoneliStackParamList>();
+const Stack = createNativeStackNavigator<UretimYoneticisiStackParamList>();
 
-export default function SahaPersoneliNavigator() {
+export default function UretimYoneticisiNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{

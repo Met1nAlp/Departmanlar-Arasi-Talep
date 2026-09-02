@@ -12,7 +12,7 @@ import { syncCatalog } from '../infrastructure/sync/CatalogSync';
 import { database } from '../infrastructure/db';
 
 import AuthNavigator from './AuthNavigator';
-import SahaPersoneliNavigator from './SahaPersoneliNavigator';
+import UretimYoneticisiNavigator from './UretimYoneticisiNavigator';
 import DepartmanYetkilisiNavigator from './DepartmanYetkilisiNavigator';
 import YoneticiNavigator from './YoneticiNavigator';
 import { initNotificationService, checkAndNotifyMissedUpdates } from '../infrastructure/notifications/notificationService';
@@ -78,10 +78,10 @@ export default function RootNavigator() {
     <View style={{ flex: 1 }}>
       <NavigationContainer ref={navigationRef}>
         {!currentUser && <AuthNavigator />}
-        {currentUser?.role === 'saha_personeli' && <SahaPersoneliNavigator />}
+        {currentUser?.role === 'uretim_yoneticisi' && <UretimYoneticisiNavigator />}
         {currentUser?.role === 'departman_yetkilisi' && <DepartmanYetkilisiNavigator />}
         {currentUser?.role === 'yonetici' && <YoneticiNavigator />}
-        {currentUser && !['saha_personeli','departman_yetkilisi','yonetici'].includes(currentUser.role) && (
+        {currentUser && !['uretim_yoneticisi','departman_yetkilisi','yonetici'].includes(currentUser.role) && (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white }}>
             <Text>Tanınmayan rol: {currentUser.role}</Text>
           </View>

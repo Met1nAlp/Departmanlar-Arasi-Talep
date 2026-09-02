@@ -24,7 +24,7 @@ export const ROLES: readonly Role[] = ['REQUESTER', 'SUPPLIER', 'SUPERVISOR', 'P
  * eşleme. Ekranlar kademeli olarak Role tipine geçene kadar bu harita kullanılır.
  */
 export const LEGACY_ROLE_MAP = {
-  saha_personeli: 'REQUESTER',
+  uretim_yoneticisi: 'REQUESTER',
   departman_yetkilisi: 'SUPPLIER',
   yonetici: 'PLANNER',
 } as const satisfies Record<string, Role>;

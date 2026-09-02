@@ -1,4 +1,4 @@
-export type UserRole = 'saha_personeli' | 'departman_yetkilisi' | 'yonetici';
+export type UserRole = 'uretim_yoneticisi' | 'departman_yetkilisi' | 'yonetici';
 
 export interface User {
   id: string;
@@ -32,6 +32,8 @@ export type RequestStatus =
 
 export interface Request {
   id: string;
+  /** Aynı sepetten (siparişten) gelen eşyaları birbirine bağlar — bkz. api/requests.ts createOrder. */
+  orderId?: string;
   requesterId: string;
   requesterName?: string;
   departmentId: string;

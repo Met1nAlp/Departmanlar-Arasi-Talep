@@ -1,14 +1,15 @@
 // src/infrastructure/notifications/notificationService.ts
 import * as Notifications from 'expo-notifications';
+import { Alert, Platform } from 'react-native';
 import { Q } from '@nozbe/watermelondb';
 import type { Database } from '@nozbe/watermelondb';
-import { Platform } from 'react-native';
 import { mepsanServerClient, fetchRequestById } from '../mepsanServer/instance';
 import type { MepsanEventEnvelope } from '../mepsanServer/MepsanServerClient';
 import { navigationRef } from '../../navigation/navigationRef';
 import { getProductsByIds } from '../../api/products';
+import { getRequestById } from '../../api/requests';
 import { checkMissedUpdates } from './missedUpdates';
-import { resolveNotificationForRequest } from './knownStatusStore';
+import { resolveNotificationForRequest, wasRequestKnownToUser, forgetKnownStatus } from './knownStatusStore';
 import { database } from '../db';
 import NotificationRecord from '../db/models/Notification';
 import { useAuthStore } from '../../store/authStore';
@@ -73,7 +74,7 @@ async function showNotification(title: string, body: string, requestId: string):
   if (!userId) return;
 
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, data: { requestId } },
+    content: { title, body, data: { requestId }, sound: true },
     trigger: null,
   });
 
@@ -90,18 +91,47 @@ async function showNotification(title: string, body: string, requestId: string):
   });
 }
 
-function navigateToRequest(requestId: string): void {
+/**
+ * Bildirime dokunulunca çağrılır. Bildirim eski olabilir (talep o aralar
+ * webden silinmiş olabilir) — bu yüzden navigate ETMEDEN ÖNCE talebin hâlâ
+ * var olup olmadığını kontrol ediyoruz. Yoksa hiçbir yere gitmiyoruz, sadece
+ * kullanıcıya bilgi veriyoruz (aksi halde detay ekranı sonsuza kadar
+ * yükleniyor kalıyordu / kullanıcı bunu "hata/çöküyor" olarak yaşıyordu).
+ */
+async function navigateToRequest(requestId: string): Promise<void> {
   if (!navigationRef.isReady()) return;
   const user = useAuthStore.getState().currentUser;
   if (!user) return;
 
+  const request = await getRequestById(requestId);
+  if (!request) {
+    Alert.alert('Talep bulunamadı', 'Bu talep artık mevcut değil — silinmiş olabilir.');
+    return;
+  }
+
   if (user.role === 'departman_yetkilisi') {
     // @ts-expect-error - navigationRef tip parametresiz, farklı stack'lere göre dinamik navigate ediyoruz
     navigationRef.navigate('RequestDetail', { requestId });
-  } else if (user.role === 'saha_personeli') {
+  } else if (user.role === 'uretim_yoneticisi') {
     // @ts-expect-error - navigationRef tip parametresiz, farklı stack'lere göre dinamik navigate ediyoruz
     navigationRef.navigate('RequestTracking', { requestId });
   }
+}
+
+/**
+ * REQUEST_DELETED (backend'de henüz YOK — Barış eklemeli): bir talep
+ * webden/adminden silindiğinde sunucu diğer broadcast'lerle aynı zarfla
+ * { type: "event", event_name: "REQUEST_DELETED", payload: { id } } yayınlamalı.
+ * Talep artık GET_REQUESTS'te dönmediği için ürün/departman bilgisine
+ * ulaşamıyoruz — bu yüzden "bu kullanıcıyı ilgilendiriyor mu" kararını
+ * knownStatusStore'daki kayıttan (bu talebi daha önce görmüş mü) veriyoruz.
+ */
+async function handleRequestDeleted(requestId: string): Promise<void> {
+  const known = await wasRequestKnownToUser(database, requestId);
+  if (!known) return;
+
+  await showNotification('Talep silindi', `${requestId.toUpperCase()} numaralı talep sistemden kaldırıldı.`, requestId);
+  await forgetKnownStatus(database, requestId);
 }
 
 let initialized = false;
@@ -113,6 +143,13 @@ export function initNotificationService(): () => void {
   void requestNotificationPermission();
 
   const unsubscribeEvent = mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
+    if (event.event_name === 'REQUEST_DELETED') {
+      const id = event.payload?.id;
+      if (typeof id !== 'string' || !id) return;
+      void handleRequestDeleted(id);
+      return;
+    }
+
     const relevantEvents = ['REQUEST_CREATED', 'REQUEST_STATUS_UPDATED', 'CANCEL_REQUEST', 'REJECT_REQUEST'];
     if (!relevantEvents.includes(event.event_name)) return;
 
@@ -133,7 +170,7 @@ export function initNotificationService(): () => void {
 
   const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
     const requestId = response.notification.request.content.data?.requestId as string | undefined;
-    if (requestId) navigateToRequest(requestId);
+    if (requestId) void navigateToRequest(requestId);
   });
 
   return () => {
