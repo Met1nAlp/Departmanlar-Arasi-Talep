@@ -1,0 +1,3659 @@
+==> authmanager.cpp <==
+#include "authmanager.h"
+
+AuthManager::AuthManager(QObject *parent)
+    : QObject{parent}
+{
+
+}
+
+==> databasemanager.cpp <==
+#include "databasemanager.h"
+#include <QDebug>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QCoreApplication>
+
+databasemanager::databasemanager() {}
+
+// Envantere kaydetme
+bool databasemanager::connectToDatabase() {
+    if (QSqlDatabase::contains(QSqlDatabase::defaultConnection)) {
+        db = QSqlDatabase::database(QSqlDatabase::defaultConnection);
+    } else {
+        db = QSqlDatabase::addDatabase("QSQLITE");
+
+        QString dbPath = QCoreApplication::applicationDirPath() + "/mepsan_envanter.db";
+        db.setDatabaseName(dbPath);
+    }
+
+    if (!db.isOpen() && !db.open()) {
+        qDebug() << "[DB HATA] Veritabani acilamadi:" << db.lastError().text();
+        return false;
+    }
+
+    qDebug() << "[DB] Aktif veritabani yolu:" << db.databaseName();
+
+  /* db = QSqlDatabase::addDatabase("QSQLITE");
+  db.setDatabaseName(QCoreApplication::applicationDirPath() + "/mepsan_envanter.db");
+
+  if (!db.open()) {
+    qDebug() << "[DB HATA] Veritabani acilamadi." << db.lastError().text();
+    return false;
+  } */
+
+  // SQL Verileri
+  QSqlQuery query;
+
+  query.exec("PRAGMA journal_mode = WAL;");
+  query.exec("PRAGMA busy_timeout = 5000;");
+
+  query.exec("CREATE TABLE IF NOT EXISTS pending_personnel ("
+               "nfc_uid TEXT PRIMARY KEY, "
+               "name TEXT, "
+               "last_scanned_at DATETIME DEFAULT (datetime('now', 'localtime')))");
+
+  query.exec("CREATE TABLE IF NOT EXISTS pos_devices ("
+             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+             "mac_address TEXT UNIQUE, "
+             "device_id TEXT, "
+             "last_ip TEXT, "
+             "last_user TEXT, "
+             "last_action, "
+             "created_at DATETIME DEFAULT (datetime('now', 'localtime')), "
+             "last_seen_at DATETIME DEFAULT (datetime('now', 'localtime')))");
+
+  query.exec("CREATE TABLE IF NOT EXISTS request_events ("
+               "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+               "request_id TEXT, "
+               "old_status TEXT, "
+               "new_status TEXT, "
+               "occurred_at TEXT)");
+
+  query.exec("CREATE TABLE IF NOT EXISTS requests ("
+             "id TEXT PRIMARY KEY, "
+             "requester_id TEXT, "
+             "department_id TEXT, "
+             "product_id TEXT, "
+             "quantity INTEGER, "
+             "status TEXT DEFAULT 'TALEP_ALINDI', "
+             "priority TEXT DEFAULT 'NORMAL', "
+             "fulfilled_quantity INTEGER DEFAULT 0, "
+             "cancel_reason TEXT, "
+             "escalated INTEGER DEFAULT 0, "
+             "created_at TEXT, "
+             "prepared_at TEXT, "
+             "ready_at TEXT, "
+             "on_the_way_at TEXT, "
+             "delivered_at TEXT, "
+             "cancelled_at TEXT)");
+
+  query.exec("CREATE TABLE IF NOT EXISTS inventory ("
+             "qr_code TEXT PRIMARY KEY, "
+             "name TEXT, "
+             "department TEXT, "
+             "quantity INTEGER DEFAULT 1, "
+             "status TEXT DEFAULT 'STOKTA VAR', "
+             "assigned_to TEXT)");
+
+  query.exec("CREATE TABLE IF NOT EXISTS personnel ("
+             "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+             "nfc_uid TEXT UNIQUE, "
+             "name TEXT NOT NULL, "
+             "department TEXT, "
+             "role TEXT DEFAULT 'saha_personeli', "
+             "created_at DATETIME DEFAULT (datetime('now', 'localtime')))");
+
+  // Eski sütunları kontrol et
+  query.exec("ALTER TABLE requests ADD COLUMN priority TEXT DEFAULT 'NORMAL'");
+  query.exec(
+      "ALTER TABLE requests ADD COLUMN fulfilled_quantity INTEGER DEFAULT 0");
+  query.exec("ALTER TABLE requests ADD COLUMN cancel_reason TEXT");
+  query.exec("ALTER TABLE requests ADD COLUMN escalated INTEGER DEFAULT 0");
+  query.exec("ALTER TABLE requests ADD COLUMN cancelled_at TEXT");
+  query.exec("ALTER TABLE inventory ADD COLUMN department TEXT");
+
+  qDebug() << "[DB] SQLite Veritabanina baglanildi. Sistem hazir.";
+  return true;
+}
+
+bool databasemanager::updateLastAction(const QString &macAddress,
+                                       const QString &actionDetails) {
+  QSqlQuery query;
+  query.prepare("UPDATE pos_devices SET last_seen_at = datetime('now', "
+                "'localtime'), last_action = :act WHERE UPPER(mac_address) = UPPER(:mac)");
+  query.bindValue(":act", actionDetails);
+  query.bindValue(":mac", macAddress.trimmed());
+
+  if (query.exec()) {
+    qDebug() << "[DB] En Son -> MAC:" << macAddress
+             << "| Aksiyon:" << actionDetails;
+    return true;
+  }
+
+  qDebug() << "[DB] HATA: En son aksiyon guncellenemedi."
+           << query.lastError().text();
+  return false;
+}
+
+// MAC kontrolü
+bool databasemanager::isMacAuthorized(const QString &macAddress) {
+  QSqlQuery query;
+  query.prepare("SELECT mac_address FROM pos_devices WHERE UPPER(mac_address) = UPPER(:mac)");
+  query.bindValue(":mac", macAddress.trimmed());
+
+  if (query.exec() && query.next()) {
+    return true;
+  }
+  return false;
+}
+
+bool databasemanager::addToWhitelist(const QString &macAddress,
+                                     const QString &deviceName) {
+  QSqlQuery query;
+  query.prepare("INSERT OR IGNORE INTO pos_devices (mac_address, device_id) "
+                "VALUES (:mac, :name)");
+  query.bindValue(":mac", macAddress.trimmed().toUpper());
+  query.bindValue(":name", deviceName.trimmed());
+
+  if (query.exec()) {
+    qDebug() << "[WHITELIST] Cihaz eklendi:" << macAddress;
+    return true;
+  }
+  qDebug() << "[WHITELIST] HATA:" << query.lastError().text();
+  return false;
+}
+
+QJsonArray databasemanager::getAllDevices() {
+  QJsonArray arr;
+  QSqlQuery query("SELECT mac_address, device_id, last_ip, last_user, "
+                  "last_action, last_seen_at, created_at FROM pos_devices "
+                  "ORDER BY created_at DESC");
+  while (query.next()) {
+    QJsonObject obj;
+    obj["mac_address"]  = query.value("mac_address").toString();
+    obj["device_name"]  = query.value("device_id").toString();
+    obj["last_ip"]      = query.value("last_ip").toString();
+    obj["last_user"]    = query.value("last_user").toString();
+    obj["last_action"]  = query.value("last_action").toString();
+    obj["last_seen_at"] = query.value("last_seen_at").toString();
+    obj["created_at"]   = query.value("created_at").toString();
+    arr.append(obj);
+  }
+  return arr;
+}
+
+bool databasemanager::addPendingCard(const QString &nfcUid, const QString &name) {
+    QSqlQuery query;
+    query.prepare("INSERT INTO pending_personnel (nfc_uid, name, last_scanned_at) "
+                  "VALUES (:nfc, :name, datetime('now', 'localtime')) "
+                  "ON CONFLICT(nfc_uid) DO UPDATE SET last_scanned_at = datetime('now', 'localtime')");
+    query.bindValue(":nfc", nfcUid.trimmed().toUpper());
+      query.bindValue(":name", name.trimmed());
+
+      if (query.exec()) {
+        qDebug() << "[DB] Kayitsiz kart havuza eklendi/guncellendi:" << nfcUid;
+        return true;
+      }
+      return false;
+    }
+
+    bool databasemanager::removePendingCard(const QString &nfcUid) {
+      QSqlQuery query;
+      query.prepare("DELETE FROM pending_personnel WHERE UPPER(nfc_uid) = UPPER(:nfc)");
+      query.bindValue(":nfc", nfcUid.trimmed());
+      return query.exec();
+    }
+
+    QJsonArray databasemanager::getPendingCards() {
+      QJsonArray arr;
+      QSqlQuery query("SELECT nfc_uid, name, last_scanned_at FROM pending_personnel ORDER BY last_scanned_at DESC");
+      while (query.next()) {
+        QJsonObject obj;
+        obj["nfc_uid"] = query.value("nfc_uid").toString();
+        obj["name"] = query.value("name").toString();
+        obj["last_scanned_at"] = query.value("last_scanned_at").toString();
+        arr.append(obj);
+      }
+      return arr;
+    }
+
+bool databasemanager::removeDevice(const QString &macAddress) {
+  QSqlQuery query;
+  query.prepare("DELETE FROM pos_devices WHERE UPPER(mac_address) = UPPER(:mac)");
+  query.bindValue(":mac", macAddress.trimmed());
+  if (query.exec()) {
+    qDebug() << "[WHITELIST] Cihaz silindi:" << macAddress;
+    return true;
+  }
+  qDebug() << "[WHITELIST] Silme HATA:" << query.lastError().text();
+  return false;
+}
+
+// En son görülme
+bool databasemanager::updateLastSeen(const QString &macAddress, const QString &ipAddress) {
+  QSqlQuery query;
+  if (!ipAddress.isEmpty()) {
+    query.prepare("UPDATE pos_devices SET last_seen_at = datetime('now', 'localtime'), "
+                  "last_ip = :ip WHERE UPPER(mac_address) = UPPER(:mac)");
+    query.bindValue(":ip", ipAddress);
+  } else {
+    query.prepare("UPDATE pos_devices SET last_seen_at = datetime('now', 'localtime') "
+                  "WHERE UPPER(mac_address) = UPPER(:mac)");
+  }
+  query.bindValue(":mac", macAddress.trimmed());
+  return query.exec();
+}
+
+// Son kullanan kullanıcıyı güncelle
+bool databasemanager::updateLastUser(const QString &macAddress,
+                                     const QString &username) {
+  if (username.trimmed().isEmpty()) return false;
+  QSqlQuery query;
+  query.prepare("UPDATE pos_devices SET last_user = :usr, "
+                "last_seen_at = datetime('now', 'localtime') "
+                "WHERE UPPER(mac_address) = UPPER(:mac)");
+  query.bindValue(":usr", username.trimmed());
+  query.bindValue(":mac", macAddress.trimmed());
+  return query.exec();
+}
+
+bool databasemanager::createRequest(
+    const QString &id, const QString &requesterId, const QString &departmentId,
+    const QString &productId, int quantity, const QString &status,
+    const QString &createdAt, const QString &priority) {
+  QSqlQuery query;
+      QSqlQuery checkStock;
+      checkStock.prepare("SELECT quantity FROM inventory WHERE product_id = :pid");
+      checkStock.bindValue(":pid", productId);
+
+      if (checkStock.exec() && checkStock.next()) {
+          int currentStock = checkStock.value(0).toInt();
+          if (quantity > currentStock) {
+              qDebug() << "[HATA] Stok yetersiz! İstenen:" << quantity << "Stokta olan:" << currentStock;
+              return false;
+      }
+      }
+  query.prepare("INSERT INTO requests (id, requester_id, department_id, "
+                "product_id, quantity, status, priority, created_at) "
+                "VALUES (:id, :reqId, :depId, :prodId, :qty, :status, "
+                ":priority, :createdAt)");
+  query.bindValue(":id", id);
+  query.bindValue(":reqId", requesterId);
+  query.bindValue(":depId", departmentId);
+  query.bindValue(":prodId", productId);
+  query.bindValue(":qty", quantity);
+  query.bindValue(":status", status);
+  query.bindValue(":priority", priority.isEmpty() ? "NORMAL" : priority);
+  query.bindValue(":createdAt", createdAt);
+
+  if (query.exec()) {
+    qDebug() << "[DB] Yeni talep olusturuldu:" << id
+             << "| Oncelik:" << priority;
+    return true;
+  }
+  qDebug() << "[DB] HATA: Talep olusturulamadi." << query.lastError().text();
+  return false;
+}
+
+QJsonArray databasemanager::getRequests(const QString &userId,
+                                        const QString &departmentId) {
+  QJsonArray requestsArray;
+  QSqlQuery query;
+  QString sql = "SELECT * FROM requests WHERE 1=1";
+
+  if (!userId.isEmpty()) {
+    sql += " AND requester_id = :userId";
+  }
+  if (!departmentId.isEmpty()) {
+    sql += " AND department_id = :depId";
+  }
+
+  query.prepare(sql);
+  if (!userId.isEmpty())
+    query.bindValue(":userId", userId);
+  if (!departmentId.isEmpty())
+    query.bindValue(":depId", departmentId);
+
+  if (query.exec()) {
+    while (query.next()) {
+      QJsonObject req;
+      req["id"] = query.value("id").toString();
+      QString reqId = query.value("requester_id").toString();
+            req["requesterId"] = reqId;
+            QString reqName = getPersonnelName(reqId);
+                  req["requesterName"] = reqName.isEmpty() ? reqId : reqName;
+      req["departmentId"] = query.value("department_id").toString();
+      req["productId"] = query.value("product_id").toString();
+      req["quantity"] = query.value("quantity").toInt();
+      req["status"] = query.value("status").toString();
+      req["priority"] = query.value("priority").toString();
+      req["fulfilledQuantity"] = query.value("fulfilled_quantity").toInt();
+      req["cancelReason"] = query.value("cancel_reason").toString();
+      req["escalated"] = query.value("escalated").toInt() == 1;
+      req["createdAt"] = query.value("created_at").toString();
+      req["preparedAt"] = query.value("prepared_at").toString();
+      req["readyAt"] = query.value("ready_at").toString();
+      req["onTheWayAt"] = query.value("on_the_way_at").toString();
+      req["deliveredAt"] = query.value("delivered_at").toString();
+      req["cancelledAt"] = query.value("cancelled_at").toString();
+
+      requestsArray.append(req);
+    }
+  } else {
+    qDebug() << "[DB] HATA: Talepler getirilemedi." << query.lastError().text();
+  }
+  return requestsArray;
+}
+
+// Talep durumu
+bool databasemanager::updateRequestStatus(const QString &id,
+                                          const QString &status,
+                                          const QString &timestampField,
+                                          const QString &timestampValue) {
+  QSqlQuery query;
+  QString sql = "UPDATE requests SET status = :status";
+  if (!timestampField.isEmpty() && !timestampValue.isEmpty()) {
+    sql += ", " + timestampField + " = :tsValue";
+  }
+  sql += " WHERE id = :id";
+
+  query.prepare(sql);
+  query.bindValue(":status", status);
+  if (!timestampField.isEmpty() && !timestampValue.isEmpty()) {
+    query.bindValue(":tsValue", timestampValue);
+  }
+  query.bindValue(":id", id);
+
+  if (!query.exec()) {
+    qDebug() << "[DB] HATA: Talep durumu guncellenemedi." << query.lastError().text();
+    return false;
+  }
+
+  qDebug() << "[DB] Talep durumu guncellendi:" << id << "->" << status;
+
+  if (status == "TESLIM_EDILDI" || status == "TESLİM_EDİLDİ") {
+      QSqlQuery findQuery;
+      findQuery.prepare("SELECT product_id, quantity FROM requests WHERE id = :id");
+      findQuery.bindValue(":id", id);
+
+      if (findQuery.exec() && findQuery.next()) {
+          QString productId = findQuery.value("product_id").toString();
+          int requestedQty = findQuery.value("quantity").toInt();
+
+          if (!productId.isEmpty() && requestedQty > 0) {
+              QSqlQuery invQuery;
+              invQuery.prepare("UPDATE inventory SET quantity = quantity - :qty WHERE qr_code = :pid");
+              invQuery.bindValue(":qty", requestedQty);
+              invQuery.bindValue(":pid", productId);
+
+              if(invQuery.exec()) {
+                  qDebug() << "[ENVANTER] Stoktan dusuldu. Urun:" << productId << "| Adet:" << requestedQty;
+
+                  QSqlQuery stockCheck;
+                  stockCheck.prepare("SELECT quantity FROM inventory WHERE qr_code = :pid");
+                  stockCheck.bindValue(":pid", productId);
+
+                  if (stockCheck.exec() && stockCheck.next()) {
+                      if (stockCheck.value(0).toInt() <= 0) {
+                          QSqlQuery outOfStock;
+                          outOfStock.prepare("UPDATE inventory SET status = 'STOKTA_YOK', quantity = 0 WHERE qr_code = :pid");
+                          outOfStock.bindValue(":pid", productId);
+                          outOfStock.exec();
+                          qDebug() << "[ENVANTER] Urun stoku tukendi (STOKTA_YOK):" << productId;
+                      }
+                  }
+              }
+          }
+      }
+  }
+
+  return true;
+}
+
+// Talep iptal etme
+bool databasemanager::cancelRequest(const QString &id,
+                                    const QString &cancelReason,
+                                    const QString &cancelledAt) {
+  QSqlQuery query;
+  query.prepare(
+      "UPDATE requests SET status = 'IPTAL_EDILDI', cancel_reason = :reason, "
+      "cancelled_at = :cancelledAt "
+      "WHERE id = :id AND status NOT IN ('TESLIM_EDILDI', 'IPTAL_EDILDI')");
+  query.bindValue(":reason", cancelReason);
+  query.bindValue(":cancelledAt", cancelledAt);
+  query.bindValue(":id", id);
+
+  if (query.exec() && query.numRowsAffected() > 0) {
+    qDebug() << "[DB] Talep iptal edildi:" << id << "| Neden:" << cancelReason;
+    return true;
+  }
+  qDebug() << "[DB] HATA: Talep iptal edilemedi (zaten teslim/iptal veya "
+              "bulunamadi)."
+           << query.lastError().text();
+  return false;
+}
+
+bool databasemanager::deleteRequest(const QString &reqId) {
+    QSqlQuery query;
+    query.prepare("DELETE FROM requests WHERE id = :id");
+    query.bindValue(":id", reqId);
+
+    if(query.exec()) {
+        return true;
+    }
+    qDebug() << "[DB HATA] Talep silinemedi:" << query.lastError().text();
+    return false;
+}
+
+// Oncelik guncelleme
+bool databasemanager::updatePriority(const QString &id,
+                                     const QString &priority) {
+  QSqlQuery query;
+  query.prepare("UPDATE requests SET priority = :priority WHERE id = :id");
+  query.bindValue(":priority", priority);
+  query.bindValue(":id", id);
+
+  if (query.exec()) {
+    qDebug() << "[DB] Talep onceligi guncellendi:" << id << "->" << priority;
+    return true;
+  }
+  qDebug() << "[DB] HATA: Oncelik guncellenemedi." << query.lastError().text();
+  return false;
+}
+
+bool databasemanager::addInventoryItem(const QString &qrCode, const QString &itemName, const QString &department) {
+  QSqlQuery query;
+  query.prepare("INSERT INTO inventory (qr_code, name, department, status, assigned_to) "
+                "VALUES (:qr, :name, :dept, 'STOKTA VAR', '')");
+
+  query.bindValue(":qr", qrCode.trimmed());
+  query.bindValue(":name", itemName.trimmed());
+  query.bindValue(":dept", department.trimmed());
+
+  if (query.exec()) {
+    qDebug() << "[DB] Envantere yeni esya eklendi:" << itemName << "| Departman:" << department;
+    return true;
+  }
+
+  qDebug() << "[DB] HATA: Envantere esya eklenemedi." << query.lastError().text();
+  return false;
+}
+
+
+bool databasemanager::fulfillRequest(const QString &id, int qty, const QString &status, const QString &timeField, const QString &timeValue) {
+
+    QSqlQuery findQuery;
+    findQuery.prepare("SELECT product_id, fulfilled_quantity FROM requests WHERE id = :id");
+    findQuery.bindValue(":id", id);
+
+    QString productId = "";
+    int oldFulfilled = 0;
+
+    if (findQuery.exec() && findQuery.next()) {
+        productId = findQuery.value("product_id").toString();
+        oldFulfilled = findQuery.value("fulfilled_quantity").toInt();
+    }
+
+    int diff = qty - oldFulfilled;
+
+    QSqlQuery query;
+    QString sql = QString("UPDATE requests SET fulfilled_quantity = :qty, status = :status, %1 = :time_val WHERE id = :id").arg(timeField);
+    query.prepare(sql);
+    query.bindValue(":qty", qty);
+    query.bindValue(":status", status);
+    query.bindValue(":time_val", timeValue);
+    query.bindValue(":id", id);
+
+    if (!query.exec()) {
+        qDebug() << "[DB HATA] Kısmi karşılama başarısız:" << query.lastError().text();
+        return false;
+    }
+
+    if (!productId.isEmpty() && diff > 0) {
+        QSqlQuery invQuery;
+        invQuery.prepare("UPDATE inventory SET quantity = quantity - :diff WHERE qr_code = :pid");
+        invQuery.bindValue(":diff", diff);
+        invQuery.bindValue(":pid", productId);
+        invQuery.exec();
+
+        QSqlQuery stockCheck;
+        stockCheck.prepare("SELECT quantity FROM inventory WHERE qr_code = :pid");
+        stockCheck.bindValue(":pid", productId);
+        if (stockCheck.exec() && stockCheck.next()) {
+            if (stockCheck.value(0).toInt() <= 0) {
+                QSqlQuery outOfStock;
+                outOfStock.prepare("UPDATE inventory SET status = 'STOKTA_YOK', quantity = 0 WHERE qr_code = :pid");
+                outOfStock.bindValue(":pid", productId);
+                outOfStock.exec();
+            }
+        }
+    }
+    return true;
+}
+
+// Eskalasyon isaretle
+bool databasemanager::escalateRequest(const QString &id) {
+  QSqlQuery query;
+  query.prepare(
+      "UPDATE requests SET escalated = 1, status = 'ESKALASYON' "
+      "WHERE id = :id AND status NOT IN ('IPTAL_EDILDI', 'TESLIM_EDILDI')");
+  query.bindValue(":id", id);
+
+  if (query.exec()) {
+    qDebug() << "[DB] Talep eskalasyona alindi:" << id;
+    return true;
+  }
+  qDebug() << "[DB] HATA: Eskalasyon isareti konulamadi."
+           << query.lastError().text();
+  return false;
+}
+
+// Eskalasyon listesi
+QJsonArray databasemanager::getEscalatedRequests() {
+  QJsonArray requestsArray;
+  QSqlQuery query;
+  query.prepare("SELECT * FROM requests WHERE escalated = 1 OR status = "
+                "'ESKALASYON' ORDER BY created_at ASC");
+
+  if (query.exec()) {
+    while (query.next()) {
+      QJsonObject req;
+      req["id"] = query.value("id").toString();
+      req["requesterId"] = query.value("requester_id").toString();
+      req["departmentId"] = query.value("department_id").toString();
+      req["productId"] = query.value("product_id").toString();
+      req["quantity"] = query.value("quantity").toInt();
+      req["status"] = query.value("status").toString();
+      req["priority"] = query.value("priority").toString();
+      req["fulfilledQuantity"] = query.value("fulfilled_quantity").toInt();
+      req["escalated"] = true;
+      req["createdAt"] = query.value("created_at").toString();
+      requestsArray.append(req);
+    }
+  }
+  return requestsArray;
+}
+
+
+QJsonArray databasemanager::getAllInventoryItems() {
+  QJsonArray arr;
+  QSqlQuery query("SELECT qr_code, name, department, quantity, status, assigned_to FROM inventory");
+  while (query.next()) {
+    QJsonObject obj;
+    obj["qrCode"] = query.value("qr_code").toString();
+    obj["name"] = query.value("name").toString();
+    obj["department"] = query.value("department").toString();
+    obj["quantity"] = query.value("quantity").toInt();
+    obj["status"] = query.value("status").toString();
+    obj["assignedTo"] = query.value("assigned_to").toString();
+    arr.append(obj);
+  }
+  return arr;
+}
+
+QJsonObject databasemanager::getInventoryItem(const QString &qrCode) {
+  QJsonObject response;
+  QSqlQuery query;
+  query.prepare("SELECT name, status, assigned_to FROM inventory WHERE qr_code = :qr");
+  query.bindValue(":qr", qrCode);
+
+  if (query.exec() && query.next()) {
+    response["found"] = true;
+    response["name"] = query.value("name").toString();
+    response["status"] = query.value("status").toString();
+    response["assigned_to"] = query.value("assigned_to").toString();
+  } else {
+    response["found"] = false;
+  }
+  return response;
+}
+
+bool databasemanager::checkoutInventoryItem(const QString &qrCode, const QString &username) {
+  QSqlQuery checkQuery;
+  checkQuery.prepare("SELECT status FROM inventory WHERE qr_code = :qr");
+  checkQuery.bindValue(":qr", qrCode);
+  
+  if (checkQuery.exec() && checkQuery.next()) {
+    QString status = checkQuery.value("status").toString();
+    if (status == "KULLANIMDA") {
+        return false;
+    }
+    
+    QSqlQuery updateQuery;
+    updateQuery.prepare("UPDATE inventory SET status = 'KULLANIMDA', assigned_to = :usr WHERE qr_code = :qr");
+    updateQuery.bindValue(":usr", username);
+    updateQuery.bindValue(":qr", qrCode);
+    return updateQuery.exec();
+  }
+  return false;
+}
+
+bool databasemanager::checkinInventoryItem(const QString &qrCode) {
+  QSqlQuery updateQuery;
+  updateQuery.prepare("UPDATE inventory SET status = 'STOKTA VAR', assigned_to = '' WHERE qr_code = :qr");
+  updateQuery.bindValue(":qr", qrCode);
+  if (updateQuery.exec() && updateQuery.numRowsAffected() > 0) {
+      return true;
+  }
+  return false;
+}
+
+// Kart işlemleri
+
+bool databasemanager::addPersonnel(const QString &nfcUid, const QString &name,
+                                   const QString &department, const QString &role) {
+  QSqlQuery query;
+  query.prepare("INSERT INTO personnel (nfc_uid, name, department, role) "
+                "VALUES (:nfc, :name, :dep, :role)");
+  query.bindValue(":nfc", nfcUid.trimmed().toUpper());
+  query.bindValue(":name", name.trimmed());
+  query.bindValue(":dep", department.trimmed());
+  query.bindValue(":role", role.isEmpty() ? "saha_personeli" : role.trimmed());
+
+  if (query.exec()) {
+    qDebug() << "[PERSONEL] Eklendi:" << name << "| NFC:" << nfcUid;
+    return true;
+  }
+  qDebug() << "[PERSONEL] HATA:" << query.lastError().text();
+  return false;
+}
+
+bool databasemanager::removePersonnel(int id) {
+  QSqlQuery query;
+  query.prepare("DELETE FROM personnel WHERE id = :id");
+  query.bindValue(":id", id);
+  return query.exec();
+}
+
+bool databasemanager::updatePersonnel(int id, const QString &nfcUid,
+                                      const QString &name,
+                                      const QString &department,
+                                      const QString &role) {
+  QSqlQuery query;
+  query.prepare("UPDATE personnel SET nfc_uid = :nfc, name = :name, "
+                "department = :dep, role = :role WHERE id = :id");
+  query.bindValue(":nfc",  nfcUid.trimmed().toUpper());
+  query.bindValue(":name", name.trimmed());
+  query.bindValue(":dep",  department.trimmed());
+  query.bindValue(":role", role.trimmed());
+  query.bindValue(":id",   id);
+
+  if (query.exec() && query.numRowsAffected() > 0) {
+    qDebug() << "[PERSONEL] Guncellendi: id=" << id << "| Ad:" << name;
+    return true;
+  }
+  qDebug() << "[PERSONEL] HATA (update):" << query.lastError().text();
+  return false;
+}
+
+QJsonArray databasemanager::getAllPersonnel() {
+  QJsonArray arr;
+  QSqlQuery query("SELECT id, nfc_uid, name, department, role, created_at FROM personnel ORDER BY name ASC");
+  while (query.next()) {
+    QJsonObject obj;
+    obj["id"] = query.value("id").toInt();
+    obj["nfc_uid"] = query.value("nfc_uid").toString();
+    obj["name"] = query.value("name").toString();
+    obj["department"] = query.value("department").toString();
+    obj["role"] = query.value("role").toString();
+    obj["created_at"] = query.value("created_at").toString();
+    arr.append(obj);
+  }
+  return arr;
+}
+
+QJsonObject databasemanager::lookupByNfcUid(const QString &nfcUid) {
+  QJsonObject result;
+  QSqlQuery query;
+  query.prepare("SELECT id, name, department, role FROM personnel "
+                "WHERE UPPER(nfc_uid) = UPPER(:nfc)");
+  query.bindValue(":nfc", nfcUid.trimmed());
+
+  if (query.exec() && query.next()) {
+    result["found"] = true;
+    result["id"] = query.value("id").toInt();
+    result["name"] = query.value("name").toString();
+    result["department"] = query.value("department").toString();
+    result["role"] = query.value("role").toString();
+  } else {
+    result["found"] = false;
+  }
+  return result;
+}
+
+QString databasemanager::getPersonnelName(const QString &idOrNfc) {
+  QSqlQuery query;
+  query.prepare("SELECT name FROM personnel WHERE UPPER(nfc_uid) = UPPER(:val) OR id = :id_val");
+  query.bindValue(":val", idOrNfc.trimmed());
+  query.bindValue(":id_val", idOrNfc.toInt());
+  if (query.exec() && query.next()) {
+    return query.value("name").toString();
+  }
+  return "";
+}
+
+==> eventlogger.cpp <==
+#include "eventlogger.h"
+
+EventLogger::EventLogger() {
+    initTable();
+}
+
+bool EventLogger::initTable() {
+    QSqlQuery query;
+    bool success = query.exec(
+        "CREATE TABLE IF NOT EXISTS request_events ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "request_id TEXT NOT NULL, "
+        "old_status TEXT, "
+        "new_status TEXT NOT NULL, "
+        "occurred_at TEXT NOT NULL)"
+    );
+
+    if (!success) {
+        qDebug() << "[EVENT_LOGGER HATA] Tablo olusturulamadi:" << query.lastError().text();
+    }
+    return success;
+}
+
+bool EventLogger::logRequestEvent(const QString &requestId, const QString &oldStatus, const QString &newStatus) {
+    QSqlQuery query;
+    query.prepare(
+        "INSERT INTO request_events (request_id, old_status, new_status, occurred_at) "
+        "VALUES (:reqId, :oldStatus, :newStatus, :occurredAt)"
+    );
+
+    QString nowUtc = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+
+    query.bindValue(":reqId", requestId.trimmed());
+    query.bindValue(":oldStatus", oldStatus.trimmed());
+    query.bindValue(":newStatus", newStatus.trimmed());
+    query.bindValue(":occurredAt", nowUtc);
+
+    if (query.exec()) {
+        qDebug() << "[EVENT_LOGGER] Olay kaydedildi -> ID:" << requestId
+                 << "|" << oldStatus << "->" << newStatus;
+        return true;
+    }
+
+    qDebug() << "[EVENT_LOGGER HATA] Olay kaydedilemedi:" << query.lastError().text();
+    return false;
+}
+
+QJsonArray EventLogger::getEventsSince(const QString &sinceTimestamp) {
+    QJsonArray eventsArray;
+    QSqlQuery query;
+
+    query.prepare(
+        "SELECT request_id, old_status, new_status, occurred_at "
+        "FROM request_events "
+        "WHERE occurred_at > :since "
+        "ORDER BY occurred_at ASC"
+    );
+    query.bindValue(":since", sinceTimestamp.trimmed());
+
+    if (query.exec()) {
+        while (query.next()) {
+            QJsonObject eventObj;
+            eventObj["request_id"] = query.value("request_id").toString();
+            eventObj["old_status"] = query.value("old_status").toString();
+            eventObj["new_status"] = query.value("new_status").toString();
+            eventObj["occurred_at"] = query.value("occurred_at").toString();
+            eventsArray.append(eventObj);
+        }
+    } else {
+        qDebug() << "[EVENT_LOGGER HATA] Olaylar cekilemedi:" << query.lastError().text();
+    }
+
+    return eventsArray;
+}
+
+==> inventorymanager.cpp <==
+#include "inventorymanager.h"
+#include <QDebug>
+
+InventoryManager::InventoryManager() {
+
+  // Mock eşyaları
+  mockDatabase.insert(
+      "MEPSAN_PRINTER_001",
+      {"MEPSAN_PRINTER_001", "HP Laser Printer", "STOKTA VAR", ""});
+  mockDatabase.insert(
+      "MEPSAN_LAPTOP_002",
+      {"MEPSAN_LAPTOP_002", "Lenovo Thinkpad", "KULLANIMDA", "Baris"});
+  mockDatabase.insert(
+      "MEPSAN_DRILL_003",
+      {"MEPSAN_DRILL_003", "Bosch Darbeli Matkap", "STOKTA YOK", ""});
+}
+
+// Envanterden Esya alma kontrolü
+bool InventoryManager::checkoutItem(const QString &qrCode,
+                                    const QString &username) {
+  if (mockDatabase.contains(qrCode)) {
+    InventoryItem &item = mockDatabase[qrCode];
+
+    if (item.status == "KULLANIMDA") {
+      qDebug() << "[ERROR] Esya zaten su kisi tarafindan kullanimda:"
+               << item.assignedTo;
+      return false;
+    }
+
+    item.status = "KULLANIMDA";
+    item.assignedTo = username;
+    qDebug() << "[ENVANTER] Checkout Basarili -> Esya:" << item.name
+             << "| Tarafindan:" << username;
+    return true;
+  }
+  return false;
+}
+
+// Envantere geri eşya ekleme
+bool InventoryManager::checkinItem(const QString &qrCode) {
+  if (mockDatabase.contains(qrCode)) {
+    InventoryItem &item = mockDatabase[qrCode];
+
+    item.status = "STOKTA_VAR";
+    item.assignedTo = "";
+    qDebug() << "[ENVANTER] Checkin Basarili -> Esya:" << item.name
+             << "Tekrardan stokta";
+    return true;
+  }
+  return false;
+}
+
+QJsonObject InventoryManager::getItemDetails(const QString &qrCode) {
+  QJsonObject response;
+
+  // QR Doğruysa eşya bilgileri
+  if (mockDatabase.contains(qrCode)) {
+    InventoryItem item = mockDatabase.value(qrCode);
+
+    response["found"] = true;
+    response["name"] = item.name;
+    response["status"] = item.status;
+    response["assigned_to"] = item.assignedTo;
+
+    qDebug() << "[VERITABANI] Esya Bulundu:" << item.name;
+  }
+
+  // QR bulamazsa
+  else {
+    response["found"] = false;
+    qDebug() << "[VERITABANI] HATA: Bu QR koda ait esya bulunamadi.";
+  }
+
+  return response;
+}
+
+#include <QJsonArray>
+
+QJsonArray InventoryManager::getAllItems() {
+  QJsonArray arr;
+  for (const InventoryItem &item : mockDatabase) {
+    QJsonObject obj;
+    obj["qrCode"] = item.qrCode;
+    obj["name"] = item.name;
+    obj["status"] = item.status;
+    obj["assignedTo"] = item.assignedTo;
+    arr.append(obj);
+  }
+  return arr;
+}
+
+==> main.cpp <==
+#include <QApplication>
+#include "mainwindow.h"
+
+int main(int argc, char *argv[]) {
+    QApplication app(argc, argv);
+    app.setApplicationName("Mepsan Server");
+
+    MainWindow w;
+    w.show();
+
+    return app.exec();
+}
+
+==> mainwindow.cpp <==
+#include "mainwindow.h"
+#include <QApplication>
+#include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFont>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QMap>
+#include <QMessageBox>
+#include <QRegularExpression>
+#include <QSplitter>
+#include <QTabWidget>
+#include <QVBoxLayout>
+
+static const QMap<QString, QString> ROLE_LABELS = {
+    {"saha_personeli",      QString::fromUtf8("Saha Personeli")},
+    {"departman_yetkilisi", QString::fromUtf8("Departman Yetkilisi")},
+    {"yonetici",            QString::fromUtf8("Y\xc3\xb6netici")},
+};
+
+static const QMap<QString, QString> DEPT_LABELS = {
+    {"elektronik_uretim", QString::fromUtf8("Elektronik \xc3\x9cretim")},
+    {"sac_atolyesi",      QString::fromUtf8("Sac At\xc3\xb6lyesi")},
+    {"talasli_imalat",    QString::fromUtf8("Tala\xc5\x9fl\xc4\xb1 \xc4\xb0malat")},
+};
+
+static QString roleLabel(const QString &key) { return ROLE_LABELS.value(key, key); }
+static QString deptLabel(const QString &key) { return DEPT_LABELS.value(key, key); }
+
+static QString roleKeyFromLabel(const QString &label) {
+    for (auto it = ROLE_LABELS.constBegin(); it != ROLE_LABELS.constEnd(); ++it)
+        if (it.value() == label) return it.key();
+    return label;
+}
+static QString deptKeyFromLabel(const QString &label) {
+    for (auto it = DEPT_LABELS.constBegin(); it != DEPT_LABELS.constEnd(); ++it)
+        if (it.value() == label) return it.key();
+    return label;
+}
+
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+  setWindowTitle("Mepsan Sunucu Kontrol Paneli");
+  setMinimumSize(1000, 650);
+
+  settings = new QSettings(QApplication::applicationDirPath() + "/server_config.ini",
+                            QSettings::IniFormat, this);
+  if (!settings->contains("Network/Port")) {
+    settings->setValue("Network/Port", 1234);
+  }
+
+  dbManager.connectToDatabase();
+  setupUi();
+  startServer();
+  refreshDeviceTable();
+  refreshRequestTable();
+  refreshInventoryTable();
+  refreshPersonnelTable();
+  refreshPendingTable();
+
+  QTimer *autoRefreshTimer = new QTimer(this);
+  connect(autoRefreshTimer, &QTimer::timeout, this, [this](){
+      refreshDeviceTable();
+      refreshRequestTable();
+      refreshInventoryTable();
+      refreshPersonnelTable();
+      refreshPendingTable();
+  });
+  autoRefreshTimer->start(60000);
+}
+
+MainWindow::~MainWindow() {}
+
+void MainWindow::setupUi() {
+  QWidget *central = new QWidget(this);
+  setCentralWidget(central);
+
+  QVBoxLayout *mainLayout = new QVBoxLayout(central);
+  mainLayout->setContentsMargins(8, 8, 8, 8);
+  mainLayout->setSpacing(6);
+
+  statusLabel = new QLabel("● Sunucu başlatılıyor...", this);
+  statusLabel->setStyleSheet("color: #e67e22; font-weight: bold; font-size: 13px;");
+  mainLayout->addWidget(statusLabel);
+
+  QTabWidget *tabs = new QTabWidget(this);
+  mainLayout->addWidget(tabs);
+
+  {
+    QWidget     *tab    = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+
+    QGroupBox   *addBox   = new QGroupBox("Yeni Cihaz Ekle (Whitelist)");
+    QHBoxLayout *formRow  = new QHBoxLayout(addBox);
+
+    macInput = new QLineEdit();
+    macInput->setPlaceholderText("MAC Adresi  (örn: AA:BB:CC:DD:EE:FF)");
+    macInput->setMinimumWidth(220);
+
+    nameInput = new QLineEdit();
+    nameInput->setPlaceholderText("Cihaz Adı  (örn: Depo Tablet 1)");
+    nameInput->setMinimumWidth(180);
+
+    addBtn = new QPushButton("➕  Ekle");
+    addBtn->setStyleSheet("background:#27ae60; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+
+    formRow->addWidget(macInput);
+    formRow->addWidget(nameInput);
+    formRow->addWidget(addBtn);
+    formRow->addStretch();
+    layout->addWidget(addBox);
+
+    deviceTable = new QTableWidget(0, 6);
+    deviceTable->setHorizontalHeaderLabels(
+        {"MAC Adresi", "Cihaz Adı", "Son IP", "Son Kullanıcı",
+         "Son İşlem", "Son Görülme"});
+
+    QHeaderView *dh = deviceTable->horizontalHeader();
+    dh->setSectionResizeMode(QHeaderView::ResizeToContents);
+    dh->setSectionResizeMode(4, QHeaderView::Stretch);
+
+    deviceTable->setWordWrap(true);
+    deviceTable->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    deviceTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    deviceTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    deviceTable->setAlternatingRowColors(true);
+    deviceTable->verticalHeader()->setVisible(false);
+    layout->addWidget(deviceTable);
+
+    removeBtn = new QPushButton("🗑  Seçili Cihazı Sil");
+    removeBtn->setStyleSheet("background:#e74c3c; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+    layout->addWidget(removeBtn, 0, Qt::AlignLeft);
+
+    tabs->addTab(tab, "🖥  Cihaz Yönetimi");
+
+    connect(addBtn,    &QPushButton::clicked, this, &MainWindow::onAddDevice);
+    connect(removeBtn, &QPushButton::clicked, this, &MainWindow::onRemoveDevice);
+  }
+
+  {
+    QWidget     *tab    = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+
+    logView = new QTextEdit();
+    logView->setReadOnly(true);
+    logView->setFont(QFont("Monospace", 9));
+    logView->setStyleSheet("background:#1e1e1e; color:#d4d4d4;");
+    layout->addWidget(logView);
+
+    clearLogBtn = new QPushButton("🧹  Log Temizle");
+    clearLogBtn->setStyleSheet("padding:5px 16px;");
+    layout->addWidget(clearLogBtn, 0, Qt::AlignRight);
+
+    tabs->addTab(tab, "📋  Canlı Log");
+
+    connect(clearLogBtn, &QPushButton::clicked, this, &MainWindow::onClearLog);
+  }
+
+  {
+    QWidget     *tab    = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+
+    requestTable = new QTableWidget(0, 7);
+    requestTable->setHorizontalHeaderLabels(
+        {"ID", "Talep Eden", "Departman", "Ürün", "Adet", "Durum", "Oluşturulma"});
+    requestTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    requestTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    requestTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    requestTable->setAlternatingRowColors(true);
+    requestTable->verticalHeader()->setVisible(false);
+    layout->addWidget(requestTable);
+
+    refreshRequestBtn = new QPushButton("🔄  Yenile");
+    refreshRequestBtn->setStyleSheet("padding:5px 16px;");
+
+    cancelRequestBtn = new QPushButton("❌  Seçili Talebi İptal Et");
+    cancelRequestBtn->setStyleSheet("background:#f39c12; color:white; font-weight:bold; padding:5px 16px; border-radius:4px;");
+
+    QPushButton *deleteRequestBtn = new QPushButton("🗑  Tamamen Sil");
+    deleteRequestBtn->setStyleSheet("background:#e74c3c; color:white; font-weight:bold; padding:5px 16px; border-radius:4px;");
+
+    QHBoxLayout *reqBtnLayout = new QHBoxLayout();
+    reqBtnLayout->addWidget(cancelRequestBtn);
+    reqBtnLayout->addWidget(deleteRequestBtn);
+    reqBtnLayout->addStretch();
+    reqBtnLayout->addWidget(refreshRequestBtn);
+
+    layout->addLayout(reqBtnLayout);
+
+    tabs->addTab(tab, "📦  Talepler");
+
+    connect(refreshRequestBtn, &QPushButton::clicked, this, &MainWindow::refreshRequestTable);
+    connect(cancelRequestBtn,  &QPushButton::clicked, this, &MainWindow::onCancelRequest);
+
+    connect(deleteRequestBtn, &QPushButton::clicked, this, [this]() {
+        int row = requestTable->currentRow();
+        if (row < 0) {
+            QMessageBox::information(this, "Bilgi", "Lütfen tamamen silmek istediğiniz talebi seçin.");
+            return;
+        }
+
+        QString reqId = requestTable->item(row, 0)->text();
+        auto ans = QMessageBox::question(this, "Kalıcı Silme Onayı",
+                                         QString("%1 numaralı talebi veritabanından TAMAMEN silmek istiyor musunuz?\n\nBu işlem geri alınamaz!").arg(reqId),
+                                         QMessageBox::Yes | QMessageBox::No);
+        if (ans == QMessageBox::Yes) {
+            if (dbManager.deleteRequest(reqId)) {
+                onLogReceived(QString("[TALEPLER] Talep kalıcı olarak silindi: %1").arg(reqId));
+                refreshRequestTable();
+                QMessageBox::information(this, "Başarılı", "Talep veritabanından kalıcı olarak silindi.");
+            } else {
+                QMessageBox::critical(this, "Hata", "Talep silinemedi. Lütfen veritabanı bağlantısını kontrol edin.");
+            }
+        }
+    });
+  }
+
+  {
+    QWidget     *tab    = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+
+    inventoryTable = new QTableWidget(0, 6);
+    inventoryTable->setHorizontalHeaderLabels(
+        {"QR Kod", "Eşya Adı", "Departman", "Adet", "Durum", "Zimmetli Kişi"});
+    inventoryTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    inventoryTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    inventoryTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    inventoryTable->setAlternatingRowColors(true);
+    inventoryTable->verticalHeader()->setVisible(false);
+    layout->addWidget(inventoryTable);
+
+    refreshInventoryBtn = new QPushButton("🔄  Yenile");
+    refreshInventoryBtn->setStyleSheet("padding:5px 16px;");
+    layout->addWidget(refreshInventoryBtn, 0, Qt::AlignRight);
+
+    tabs->addTab(tab, "🏷️  Zimmet (Envanter)");
+
+    connect(refreshInventoryBtn, &QPushButton::clicked, this, &MainWindow::refreshInventoryTable);
+  }
+
+  {
+    QWidget     *tab    = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(tab);
+    layout->setContentsMargins(10, 10, 10, 10);
+
+    QGroupBox   *addBox  = new QGroupBox("Yeni Personel Ekle (NFC Kart Tanımla)");
+    QHBoxLayout *formRow = new QHBoxLayout(addBox);
+
+    nfcInput = new QLineEdit();
+    nfcInput->setPlaceholderText("NFC Kart UID  (örn: 04:A1:B2:C3)");
+    nfcInput->setMinimumWidth(180);
+
+    personnelNameInput = new QLineEdit();
+    personnelNameInput->setPlaceholderText("Ad Soyad");
+    personnelNameInput->setMinimumWidth(140);
+
+    personnelDeptInput = new QComboBox();
+    for (auto it = DEPT_LABELS.constBegin(); it != DEPT_LABELS.constEnd(); ++it)
+        personnelDeptInput->addItem(it.value(), it.key());
+    personnelDeptInput->setMinimumWidth(140);
+
+    personnelRoleInput = new QComboBox();
+    for (auto it = ROLE_LABELS.constBegin(); it != ROLE_LABELS.constEnd(); ++it)
+        personnelRoleInput->addItem(it.value(), it.key());
+    personnelRoleInput->setMinimumWidth(140);
+
+    connect(personnelRoleInput, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+            if (!personnelRoleInput || !personnelDeptInput || index < 0) return;
+
+            QString roleKey = personnelRoleInput->itemData(index).toString();
+            if (roleKey == "saha_personeli") {
+                personnelDeptInput->setEnabled(false);
+                personnelDeptInput->setCurrentIndex(-1);
+            } else {
+                personnelDeptInput->setEnabled(true);
+                if (personnelDeptInput->currentIndex() < 0) {
+                    personnelDeptInput->setCurrentIndex(0);
+                }
+            }
+        });
+
+    addPersonnelBtn = new QPushButton("➕  Ekle");
+    addPersonnelBtn->setStyleSheet("background:#2980b9; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+
+    formRow->addWidget(nfcInput);
+    formRow->addWidget(personnelNameInput);
+    formRow->addWidget(personnelDeptInput);
+    formRow->addWidget(personnelRoleInput);
+    formRow->addWidget(addPersonnelBtn);
+    formRow->addStretch();
+    layout->addWidget(addBox);
+
+    personnelTable = new QTableWidget(0, 5);
+    personnelTable->setHorizontalHeaderLabels(
+        {"ID", "NFC UID", "Ad Soyad", "Departman", "Rol"});
+    personnelTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    personnelTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    personnelTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    personnelTable->setAlternatingRowColors(true);
+    personnelTable->verticalHeader()->setVisible(false);
+    layout->addWidget(personnelTable);
+
+    QHBoxLayout *personnelBtnRow = new QHBoxLayout();
+
+    removePersonnelBtn = new QPushButton("🗑  Seçili Personeli Sil");
+    removePersonnelBtn->setStyleSheet("background:#e74c3c; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+
+    editPersonnelBtn = new QPushButton("✏️  Seçili Personeli Düzenle");
+    editPersonnelBtn->setStyleSheet("background:#f39c12; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+
+    personnelBtnRow->addWidget(removePersonnelBtn);
+    personnelBtnRow->addWidget(editPersonnelBtn);
+    personnelBtnRow->addStretch();
+    layout->addLayout(personnelBtnRow);
+
+        QLabel *pendingLabel = new QLabel("📋 Onay Bekleyen / Kaydedilmemiş Kartlar Havuzu");
+        pendingLabel->setStyleSheet("font-weight: bold; color: #e74c3c; margin-top: 10px;");
+        layout->addWidget(pendingLabel);
+
+        pendingTable = new QTableWidget(0, 3);
+        pendingTable->setHorizontalHeaderLabels({"NFC UID", "Ad (Varsa)", "Son Okutulma Zamanı"});
+        pendingTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        pendingTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+        pendingTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        pendingTable->setAlternatingRowColors(true);
+        pendingTable->verticalHeader()->setVisible(false);
+        pendingTable->setMaximumHeight(150);
+        layout->addWidget(pendingTable);
+
+        QHBoxLayout *pendingBtnsLayout = new QHBoxLayout();
+
+        approveCardBtn = new QPushButton("✅  Seçili Kartı Personele Dönüştür (Onayla)");
+        approveCardBtn->setStyleSheet("background:#27ae60; color:white; font-weight:bold; padding:6px 18px; border-radius:4px;");
+
+        QPushButton *refreshPendingBtn = new QPushButton("🔄 Yenile");
+            refreshPendingBtn->setStyleSheet("padding:6px 18px; font-weight:bold;");
+
+            pendingBtnsLayout->addWidget(approveCardBtn);
+                pendingBtnsLayout->addWidget(refreshPendingBtn);
+                pendingBtnsLayout->addStretch();
+
+                layout->addLayout(pendingBtnsLayout);
+
+                connect(approveCardBtn, &QPushButton::clicked, this, &MainWindow::onApprovePendingCard);
+                connect(refreshPendingBtn, &QPushButton::clicked, this, &MainWindow::refreshPendingTable);
+
+    tabs->addTab(tab, "👤  Personel Yönetimi");
+
+    connect(addPersonnelBtn,    &QPushButton::clicked, this, &MainWindow::onAddPersonnel);
+    connect(removePersonnelBtn, &QPushButton::clicked, this, &MainWindow::onRemovePersonnel);
+    connect(editPersonnelBtn,   &QPushButton::clicked, this, &MainWindow::onEditPersonnel);
+  }
+}
+
+void MainWindow::startServer() {
+  quint16 port = settings->value("Network/Port", 1234).toUInt();
+  server = new ServerHandler(port, this);
+
+  connect(server, &ServerHandler::logReceived,      this, &MainWindow::onLogReceived);
+  connect(server, &ServerHandler::deviceTableChanged, this, &MainWindow::onDeviceTableChanged);
+  connect(server, &ServerHandler::requestTableChanged, this, &MainWindow::refreshRequestTable);
+
+  statusLabel->setText(QString("● Sunucu çalışıyor — Port: %1").arg(port));
+  statusLabel->setStyleSheet("color:#27ae60; font-weight:bold; font-size:13px;");
+}
+
+void MainWindow::onAddDevice() {
+  QString mac  = macInput->text().trimmed().toUpper();
+  QString name = nameInput->text().trimmed();
+
+  if (name.isEmpty()) {
+    QMessageBox::warning(this, "Hata", "Cihaz adı boş olamaz.");
+    return;
+  }
+
+  QRegularExpression macRegex("^([0-9A-F]{2}:){5}[0-9A-F]{2}$");
+  if (!macRegex.match(mac).hasMatch()) {
+    QMessageBox::warning(this, "Hata", "Geçersiz MAC adresi formatı!\nLütfen AA:BB:CC:DD:EE:FF formatında giriniz.");
+    return;
+  }
+
+  if (dbManager.addToWhitelist(mac, name)) {
+    onLogReceived(QString("[WHITELIST] Cihaz eklendi: %1  (%2)").arg(mac, name));
+    macInput->clear();
+    nameInput->clear();
+    refreshDeviceTable();
+  } else {
+    QMessageBox::critical(this, "Hata", "Cihaz eklenemedi. Bu MAC zaten kayıtlı olabilir.");
+  }
+}
+
+void MainWindow::onRemoveDevice() {
+  int row = deviceTable->currentRow();
+  if (row < 0) {
+    QMessageBox::information(this, "Bilgi", "Lütfen silmek istediğiniz cihazı seçin.");
+    return;
+  }
+
+  QString mac = deviceTable->item(row, 0)->text();
+  auto ans = QMessageBox::question(this, "Emin misiniz?",
+                                   QString("%1 MAC adresli cihazı silmek istiyor musunuz?").arg(mac));
+  if (ans == QMessageBox::Yes) {
+    if (dbManager.removeDevice(mac)) {
+      onLogReceived(QString("[WHITELIST] Cihaz silindi: %1").arg(mac));
+      refreshDeviceTable();
+    }
+  }
+}
+
+void MainWindow::onLogReceived(const QString &message) {
+  QString timestamp = QDateTime::currentDateTime().toString("[hh:mm:ss] ");
+  logView->append(timestamp + message);
+}
+
+void MainWindow::onDeviceTableChanged() {
+  refreshDeviceTable();
+  refreshInventoryTable();
+}
+
+void MainWindow::onClearLog() {
+  logView->clear();
+}
+
+void MainWindow::refreshDeviceTable() {
+  QJsonArray devices = dbManager.getAllDevices();
+  deviceTable->setRowCount(0);
+
+  for (const auto &val : devices) {
+    QJsonObject obj = val.toObject();
+    int row = deviceTable->rowCount();
+    deviceTable->insertRow(row);
+    deviceTable->setItem(row, 0, new QTableWidgetItem(obj["mac_address"].toString()));
+    deviceTable->setItem(row, 1, new QTableWidgetItem(obj["device_name"].toString()));
+    deviceTable->setItem(row, 2, new QTableWidgetItem(obj["last_ip"].toString()));
+    deviceTable->setItem(row, 3, new QTableWidgetItem(obj["last_user"].toString()));
+    deviceTable->setItem(row, 4, new QTableWidgetItem(obj["last_action"].toString()));
+    deviceTable->setItem(row, 5, new QTableWidgetItem(obj["last_seen_at"].toString()));
+  }
+}
+
+void MainWindow::refreshRequestTable() {
+  QJsonArray reqs = dbManager.getRequests();
+  requestTable->setRowCount(0);
+
+  QMap<QString, QString> personnelMap;
+  QJsonArray personnel = dbManager.getAllPersonnel();
+  for (const auto &p : personnel) {
+      QJsonObject pObj = p.toObject();
+      personnelMap[pObj["nfc_uid"].toString()] = pObj["name"].toString();
+      personnelMap[QString::number(pObj["id"].toInt())] = pObj["name"].toString();
+  }
+
+  for (const auto &val : reqs) {
+    QJsonObject obj = val.toObject();
+    int row = requestTable->rowCount();
+    requestTable->insertRow(row);
+    requestTable->setItem(row, 0, new QTableWidgetItem(obj["id"].toString()));
+
+    QString reqId = obj["requesterId"].toString();
+    QString reqName = personnelMap.value(reqId, reqId);
+    requestTable->setItem(row, 1, new QTableWidgetItem(reqName));
+
+    QString depId = obj["departmentId"].toString();
+    requestTable->setItem(row, 2, new QTableWidgetItem(deptLabel(depId)));
+
+    requestTable->setItem(row, 3, new QTableWidgetItem(obj["productId"].toString()));
+    requestTable->setItem(row, 4, new QTableWidgetItem(QString::number(obj["quantity"].toInt())));
+
+    QString status = obj["status"].toString();
+    QTableWidgetItem *statusItem = new QTableWidgetItem(status);
+    if (status == "TALEP_ALINDI")    statusItem->setBackground(QColor("#f39c12"));
+    else if (status == "HAZIRLANIYOR") statusItem->setBackground(QColor("#3498db"));
+    else if (status == "HAZIR")      statusItem->setBackground(QColor("#27ae60"));
+    else if (status == "YOLDA")      statusItem->setBackground(QColor("#8e44ad"));
+    else if (status == "TESLIM_EDILDI") statusItem->setBackground(QColor("#95a5a6"));
+    else if (status == "IPTAL_EDILDI")  statusItem->setBackground(QColor("#e74c3c"));
+    else if (status == "ESKALASYON")    statusItem->setBackground(QColor("#c0392b"));
+    statusItem->setForeground(Qt::white);
+    requestTable->setItem(row, 5, statusItem);
+
+    QString rawDate = obj["createdAt"].toString();
+        QDateTime dt = QDateTime::fromString(rawDate, Qt::ISODate);
+        QString niceDate = dt.isValid() ? dt.toLocalTime().toString("dd.MM.yyyy HH:mm") : rawDate;
+        requestTable->setItem(row, 6, new QTableWidgetItem(niceDate));
+  }
+}
+
+void MainWindow::refreshInventoryTable() {
+  QJsonArray items = dbManager.getAllInventoryItems();
+  inventoryTable->setRowCount(0);
+
+  for (const auto &val : items) {
+    QJsonObject obj = val.toObject();
+    int row = inventoryTable->rowCount();
+    inventoryTable->insertRow(row);
+
+    inventoryTable->setItem(row, 0, new QTableWidgetItem(obj["qrCode"].toString()));
+    inventoryTable->setItem(row, 1, new QTableWidgetItem(obj["name"].toString()));
+
+    QString deptKey = obj["department"].toString();
+        QTableWidgetItem *deptItem = new QTableWidgetItem(deptLabel(deptKey));
+        deptItem->setBackground(QColor("#34495e"));
+        deptItem->setForeground(Qt::white);
+        inventoryTable->setItem(row, 2, deptItem);
+
+        int quantity = obj["quantity"].toInt();
+            QTableWidgetItem *qtyItem = new QTableWidgetItem(QString::number(quantity));
+            qtyItem->setTextAlignment(Qt::AlignCenter);
+            inventoryTable->setItem(row, 3, qtyItem);
+
+        QString status = obj["status"].toString();
+            QTableWidgetItem *statusItem = new QTableWidgetItem(status);
+            if (status == "STOKTA VAR") statusItem->setBackground(QColor("#27ae60"));
+            else if (status == "KULLANIMDA") statusItem->setBackground(QColor("#e74c3c"));
+            else statusItem->setBackground(QColor("#7f8c8d"));
+            statusItem->setForeground(Qt::white);
+            inventoryTable->setItem(row, 4, statusItem);
+
+            QString assignedTo = obj["assigned_to"].toString();
+
+            if (quantity > 1 && assignedTo.isEmpty()) {
+                    QTableWidgetItem *ortakItem = new QTableWidgetItem("Ortak Kullanım");
+                    ortakItem->setForeground(QColor("#95a5a6"));
+                    inventoryTable->setItem(row, 5, ortakItem);
+                } else {
+
+    inventoryTable->setItem(row, 5, new QTableWidgetItem(obj["assignedTo"].toString()));
+  }
+ }
+}
+
+void MainWindow::refreshPendingTable() {
+    QJsonArray pendingCards = dbManager.getPendingCards();
+      pendingTable->setRowCount(0);
+
+      for (const auto &val : pendingCards) {
+        QJsonObject obj = val.toObject();
+        int row = pendingTable->rowCount();
+        pendingTable->insertRow(row);
+        pendingTable->setItem(row, 0, new QTableWidgetItem(obj["nfc_uid"].toString()));
+        pendingTable->setItem(row, 1, new QTableWidgetItem(obj["name"].toString()));
+        pendingTable->setItem(row, 2, new QTableWidgetItem(obj["last_scanned_at"].toString()));
+      }
+    }
+
+void MainWindow::onApprovePendingCard() {
+  int row = pendingTable->currentRow();
+  if (row < 0) {
+    QMessageBox::information(this, "Bilgi", "Lütfen onaylamak istediğiniz kartı listeden seçin.");
+    return;
+  }
+
+  QString nfcUid = pendingTable->item(row, 0)->text();
+  QString defaultName = pendingTable->item(row, 1)->text();
+
+  QDialog dlg(this);
+  dlg.setWindowTitle(QString("Kartı Onayla ve Kaydet — %1").arg(nfcUid));
+  dlg.setMinimumWidth(380);
+
+  QFormLayout *form = new QFormLayout(&dlg);
+  QLineEdit *nameInput = new QLineEdit(defaultName, &dlg);
+
+  QComboBox *deptInput = new QComboBox(&dlg);
+  for (auto it = DEPT_LABELS.constBegin(); it != DEPT_LABELS.constEnd(); ++it)
+      deptInput->addItem(it.value(), it.key());
+
+  QComboBox *roleInput = new QComboBox(&dlg);
+  for (auto it = ROLE_LABELS.constBegin(); it != ROLE_LABELS.constEnd(); ++it)
+      roleInput->addItem(it.value(), it.key());
+
+    if (roleInput->currentData().toString() == "saha_personeli") {
+      deptInput->setEnabled(false);
+      deptInput->setCurrentIndex(-1);
+    }
+
+    connect(roleInput, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [roleInput, deptInput](int index) {
+      if (index < 0) return;
+
+      if (roleInput->itemData(index).toString() == "saha_personeli") {
+        deptInput->setEnabled(false);
+        deptInput->setCurrentIndex(-1);
+      } else {
+        deptInput->setEnabled(true);
+        if (deptInput->currentIndex() < 0) {
+          deptInput->setCurrentIndex(0);
+        }
+      }
+    });
+
+  form->addRow("NFC UID:", new QLabel(nfcUid, &dlg));
+  form->addRow("Ad Soyad:", nameInput);
+  form->addRow("Departman:", deptInput);
+  form->addRow("Rol:", roleInput);
+
+  QDialogButtonBox *btns = new QDialogButtonBox(
+      QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+  btns->button(QDialogButtonBox::Ok)->setText("💾  Kaydet ve Aktifleştir");
+  form->addRow(btns);
+
+  connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  if (dlg.exec() != QDialog::Accepted) return;
+
+  QString name = nameInput->text().trimmed();
+  QString dept = deptInput->currentData().toString();
+  QString role = roleInput->currentData().toString();
+
+  if (role == "saha_personeli") {
+      dept = "";
+  }
+      connect(roleInput, &QComboBox::currentTextChanged, [&]() {
+          if (roleInput->currentData().toString() == "saha_personeli") {
+              deptInput->setEnabled(false);
+              deptInput->setCurrentIndex(-1);
+          } else {
+              deptInput->setEnabled(true);
+          }
+      });
+
+  if (name.isEmpty()) {
+    QMessageBox::warning(this, "Hata", "Personel adı boş olamaz.");
+    return;
+  }
+
+  if (dbManager.addPersonnel(nfcUid, name, dept, role)) {
+    dbManager.removePendingCard(nfcUid);
+
+    onLogReceived(QString("[PERSONEL ONAY] Havuzdaki kart sisteme kaydedildi: %1 (NFC: %2)").arg(name, nfcUid));
+
+    refreshPendingTable();
+    refreshPersonnelTable();
+    QMessageBox::information(this, "Başarılı", "Kart onaylandı ve personel olarak sisteme eklendi.");
+  } else {
+    QMessageBox::critical(this, "Hata", "Personel eklenemedi. Bu NFC UID zaten kayıtlı olabilir.");
+  }
+}
+
+void MainWindow::onAddPersonnel() {
+  QString nfc  = nfcInput->text().trimmed().toUpper();
+  QString name = personnelNameInput->text().trimmed();
+  QString dept = personnelDeptInput->currentData().toString();
+  QString role = personnelRoleInput->currentData().toString();
+
+  if (role  =="saha_personeli") {
+      dept = "";
+  }
+
+  if (nfc.isEmpty() || name.isEmpty()) {
+    QMessageBox::warning(this, "Hata", "NFC UID ve Ad Soyad alanları boş olamaz.");
+    return;
+  }
+
+  if (dbManager.addPersonnel(nfc, name, dept, role)) {
+    onLogReceived(QString("[PERSONEL] Eklendi: %1 | NFC: %2 | Dept: %3").arg(name, nfc, deptLabel(dept)));
+    nfcInput->clear();
+    personnelNameInput->clear();
+    refreshPersonnelTable();
+  } else {
+    QMessageBox::critical(this, "Hata", "Personel eklenemedi. Bu NFC UID zaten kayıtlı olabilir.");
+  }
+}
+
+void MainWindow::onRemovePersonnel() {
+  int row = personnelTable->currentRow();
+  if (row < 0) {
+    QMessageBox::information(this, "Bilgi", "Lütfen silmek istediğiniz personeli seçin.");
+    return;
+  }
+
+  int id = personnelTable->item(row, 0)->text().toInt();
+  QString name = personnelTable->item(row, 2)->text();
+  auto ans = QMessageBox::question(this, "Emin misiniz?",
+                                   QString("%1 personelini silmek istiyor musunuz?").arg(name));
+  if (ans == QMessageBox::Yes) {
+    if (dbManager.removePersonnel(id)) {
+      onLogReceived(QString("[PERSONEL] Silindi: %1").arg(name));
+      refreshPersonnelTable();
+    }
+  }
+}
+
+void MainWindow::onEditPersonnel() {
+  int row = personnelTable->currentRow();
+  if (row < 0) {
+    QMessageBox::information(this, "Bilgi", "Lütfen düzenlemek istediğiniz personeli seçin.");
+    return;
+  }
+
+  int     id   = personnelTable->item(row, 0)->text().toInt();
+  QString nfc  = personnelTable->item(row, 1)->text();
+  QString name = personnelTable->item(row, 2)->text();
+  QString deptKey = deptKeyFromLabel(personnelTable->item(row, 3)->text());
+  QString roleKey = roleKeyFromLabel(personnelTable->item(row, 4)->text());
+
+  QDialog dlg(this);
+  dlg.setWindowTitle(QString("Personel Düzenle — %1").arg(name));
+  dlg.setMinimumWidth(420);
+
+  QFormLayout *form = new QFormLayout(&dlg);
+  form->setSpacing(10);
+  form->setContentsMargins(16, 16, 16, 16);
+
+  QLineEdit *eNfc  = new QLineEdit(nfc,  &dlg);
+  QLineEdit *eName = new QLineEdit(name, &dlg);
+
+  QComboBox *eDept = new QComboBox(&dlg);
+  for (auto it = DEPT_LABELS.constBegin(); it != DEPT_LABELS.constEnd(); ++it)
+      eDept->addItem(it.value(), it.key());
+  int deptIdx = eDept->findData(deptKey);
+  if (deptIdx >= 0) eDept->setCurrentIndex(deptIdx);
+
+  QComboBox *eRole = new QComboBox(&dlg);
+  for (auto it = ROLE_LABELS.constBegin(); it != ROLE_LABELS.constEnd(); ++it)
+      eRole->addItem(it.value(), it.key());
+  int roleIdx = eRole->findData(roleKey);
+  if (roleIdx >= 0) eRole->setCurrentIndex(roleIdx);
+
+    if (eRole->currentData().toString() == "saha_personeli") {
+      eDept->setEnabled(false);
+      eDept->setCurrentIndex(-1);
+    }
+
+    connect(eRole, &QComboBox::currentTextChanged, [eRole, eDept]() {
+      if (eRole->currentData().toString() == "saha_personeli") {
+        eDept->setEnabled(false);
+        eDept->setCurrentIndex(-1);
+      } else {
+        eDept->setEnabled(true);
+        if (eDept->currentIndex() < 0) {
+          eDept->setCurrentIndex(0);
+        }
+      }
+    });
+
+  form->addRow("NFC UID:",    eNfc);
+  form->addRow("Ad Soyad:",   eName);
+  form->addRow("Departman:",  eDept);
+  form->addRow("Rol:",        eRole);
+
+  QDialogButtonBox *btns = new QDialogButtonBox(
+      QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dlg);
+  btns->button(QDialogButtonBox::Save)->setText("💾  Kaydet");
+  btns->button(QDialogButtonBox::Save)->setStyleSheet(
+      "background:#27ae60; color:white; font-weight:bold; padding:5px 14px;");
+  form->addRow(btns);
+
+  connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+  if (dlg.exec() != QDialog::Accepted) return;
+
+  QString newNfc  = eNfc->text().trimmed().toUpper();
+  QString newName = eName->text().trimmed();
+  QString newDept = eDept->currentData().toString();
+  QString newRole = eRole->currentData().toString();
+
+  if (newRole == "saha_personeli") {
+      newDept = "";
+  }
+
+  if (newNfc.isEmpty() || newName.isEmpty()) {
+    QMessageBox::warning(this, "Hata", "NFC UID ve Ad Soyad boş olamaz.");
+    return;
+  }
+
+  if (dbManager.updatePersonnel(id, newNfc, newName, newDept, newRole)) {
+    onLogReceived(QString("[PERSONEL] Güncellendi: %1 | NFC: %2 | Dept: %3 | Rol: %4")
+                      .arg(newName, newNfc, deptLabel(newDept), roleLabel(newRole)));
+    refreshPersonnelTable();
+  } else {
+    QMessageBox::critical(this, "Hata",
+                          "Personel güncellenemedi.\nBu NFC UID başka bir personele kayıtlı olabilir.");
+  }
+}
+
+void MainWindow::refreshPersonnelTable() {
+  QJsonArray personnel = dbManager.getAllPersonnel();
+  personnelTable->setRowCount(0);
+
+  for (const auto &val : personnel) {
+    QJsonObject obj = val.toObject();
+    int row = personnelTable->rowCount();
+    personnelTable->insertRow(row);
+    personnelTable->setItem(row, 0, new QTableWidgetItem(QString::number(obj["id"].toInt())));
+    personnelTable->setItem(row, 1, new QTableWidgetItem(obj["nfc_uid"].toString()));
+    personnelTable->setItem(row, 2, new QTableWidgetItem(obj["name"].toString()));
+
+    QString deptKey = obj["department"].toString();
+        QTableWidgetItem *deptItem;
+
+        if (deptKey.isEmpty()) {
+            deptItem = new QTableWidgetItem("Bağımsız (Saha)");
+            deptItem->setBackground(QColor("#7f8c8d"));
+        } else {
+            deptItem = new QTableWidgetItem(deptLabel(deptKey));
+            deptItem->setBackground(QColor("#34495e"));
+        }
+
+        deptItem->setForeground(Qt::white);
+        personnelTable->setItem(row, 3, deptItem);
+
+    QString roleKey = obj["role"].toString();
+    QTableWidgetItem *roleItem = new QTableWidgetItem(roleLabel(roleKey));
+    if (roleKey == "yonetici") roleItem->setBackground(QColor("#8e44ad"));
+    else if (roleKey == "departman_yetkilisi") roleItem->setBackground(QColor("#e67e22"));
+    else roleItem->setBackground(QColor("#27ae60"));
+    roleItem->setForeground(Qt::white);
+    personnelTable->setItem(row, 4, roleItem);
+
+  }
+}
+
+void MainWindow::onCancelRequest() {
+  int row = requestTable->currentRow();
+  if (row < 0) {
+    QMessageBox::information(this, "Bilgi", "Lütfen iptal etmek istediğiniz talebi seçin.");
+    return;
+  }
+
+  QString reqId = requestTable->item(row, 0)->text();
+  QString status = requestTable->item(row, 5)->text();
+
+  if (status == "İptal Edildi" || status == "IPTAL_EDILDI" || status == "TESLIM_EDILDI" || status == "Teslim Edildi") {
+    QMessageBox::warning(this, "Hata", "Bu talep zaten kapatılmış veya iptal edilmiş durumda.");
+    return;
+  }
+
+  auto ans = QMessageBox::question(this, "Emin misiniz?", QString("%1 numaralı talebi iptal etmek istiyor musunuz?").arg(reqId));
+  if (ans == QMessageBox::Yes) {
+    QString timeStr = QDateTime::currentDateTime().toString(Qt::ISODate);
+    if (dbManager.cancelRequest(reqId, "Sunucu üzerinden iptal edildi.", timeStr)) {
+       refreshRequestTable();
+       QMessageBox::information(this, "Başarılı", "Talep başarıyla iptal edildi.");
+    } else {
+       QMessageBox::warning(this, "Hata", "Talep iptal edilemedi.");
+    }
+  }
+}
+
+==> moc_mainwindow.cpp <==
+/****************************************************************************
+** Meta object code from reading C++ file 'mainwindow.h'
+**
+** Created by: The Qt Meta Object Compiler version 67 (Qt 5.15.3)
+**
+** WARNING! All changes made in this file will be lost!
+*****************************************************************************/
+
+#include <memory>
+#include "mainwindow.h"
+#include <QtCore/qbytearray.h>
+#include <QtCore/qmetatype.h>
+#if !defined(Q_MOC_OUTPUT_REVISION)
+#error "The header file 'mainwindow.h' doesn't include <QObject>."
+#elif Q_MOC_OUTPUT_REVISION != 67
+#error "This file was generated using the moc from 5.15.3. It"
+#error "cannot be used with the include files from this version of Qt."
+#error "(The moc has changed too much.)"
+#endif
+
+QT_BEGIN_MOC_NAMESPACE
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+struct qt_meta_stringdata_MainWindow_t {
+    QByteArrayData data[13];
+    char stringdata0[186];
+};
+#define QT_MOC_LITERAL(idx, ofs, len) \
+    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
+    qptrdiff(offsetof(qt_meta_stringdata_MainWindow_t, stringdata0) + ofs \
+        - idx * sizeof(QByteArrayData)) \
+    )
+static const qt_meta_stringdata_MainWindow_t qt_meta_stringdata_MainWindow = {
+    {
+QT_MOC_LITERAL(0, 0, 10), // "MainWindow"
+QT_MOC_LITERAL(1, 11, 11), // "onAddDevice"
+QT_MOC_LITERAL(2, 23, 0), // ""
+QT_MOC_LITERAL(3, 24, 14), // "onRemoveDevice"
+QT_MOC_LITERAL(4, 39, 13), // "onLogReceived"
+QT_MOC_LITERAL(5, 53, 7), // "message"
+QT_MOC_LITERAL(6, 61, 20), // "onDeviceTableChanged"
+QT_MOC_LITERAL(7, 82, 10), // "onClearLog"
+QT_MOC_LITERAL(8, 93, 21), // "refreshInventoryTable"
+QT_MOC_LITERAL(9, 115, 14), // "onAddPersonnel"
+QT_MOC_LITERAL(10, 130, 17), // "onRemovePersonnel"
+QT_MOC_LITERAL(11, 148, 15), // "onEditPersonnel"
+QT_MOC_LITERAL(12, 164, 21) // "refreshPersonnelTable"
+
+    },
+    "MainWindow\0onAddDevice\0\0onRemoveDevice\0"
+    "onLogReceived\0message\0onDeviceTableChanged\0"
+    "onClearLog\0refreshInventoryTable\0"
+    "onAddPersonnel\0onRemovePersonnel\0"
+    "onEditPersonnel\0refreshPersonnelTable"
+};
+#undef QT_MOC_LITERAL
+
+static const uint qt_meta_data_MainWindow[] = {
+
+ // content:
+       8,       // revision
+       0,       // classname
+       0,    0, // classinfo
+      10,   14, // methods
+       0,    0, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       0,       // signalCount
+
+ // slots: name, argc, parameters, tag, flags
+       1,    0,   64,    2, 0x08 /* Private */,
+       3,    0,   65,    2, 0x08 /* Private */,
+       4,    1,   66,    2, 0x08 /* Private */,
+       6,    0,   69,    2, 0x08 /* Private */,
+       7,    0,   70,    2, 0x08 /* Private */,
+       8,    0,   71,    2, 0x08 /* Private */,
+       9,    0,   72,    2, 0x08 /* Private */,
+      10,    0,   73,    2, 0x08 /* Private */,
+      11,    0,   74,    2, 0x08 /* Private */,
+      12,    0,   75,    2, 0x08 /* Private */,
+
+ // slots: parameters
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::QString,    5,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+    QMetaType::Void,
+
+       0        // eod
+};
+
+void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
+{
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        auto *_t = static_cast<MainWindow *>(_o);
+        (void)_t;
+        switch (_id) {
+        case 0: _t->onAddDevice(); break;
+        case 1: _t->onRemoveDevice(); break;
+        case 2: _t->onLogReceived((*reinterpret_cast< const QString(*)>(_a[1]))); break;
+        case 3: _t->onDeviceTableChanged(); break;
+        case 4: _t->onClearLog(); break;
+        case 5: _t->refreshInventoryTable(); break;
+        case 6: _t->onAddPersonnel(); break;
+        case 7: _t->onRemovePersonnel(); break;
+        case 8: _t->onEditPersonnel(); break;
+        case 9: _t->refreshPersonnelTable(); break;
+        default: ;
+        }
+    }
+}
+
+QT_INIT_METAOBJECT const QMetaObject MainWindow::staticMetaObject = { {
+    QMetaObject::SuperData::link<QMainWindow::staticMetaObject>(),
+    qt_meta_stringdata_MainWindow.data,
+    qt_meta_data_MainWindow,
+    qt_static_metacall,
+    nullptr,
+    nullptr
+} };
+
+
+const QMetaObject *MainWindow::metaObject() const
+{
+    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
+}
+
+void *MainWindow::qt_metacast(const char *_clname)
+{
+    if (!_clname) return nullptr;
+    if (!strcmp(_clname, qt_meta_stringdata_MainWindow.stringdata0))
+        return static_cast<void*>(this);
+    return QMainWindow::qt_metacast(_clname);
+}
+
+int MainWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
+{
+    _id = QMainWindow::qt_metacall(_c, _id, _a);
+    if (_id < 0)
+        return _id;
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        if (_id < 10)
+            qt_static_metacall(this, _c, _id, _a);
+        _id -= 10;
+    } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
+        if (_id < 10)
+            *reinterpret_cast<int*>(_a[0]) = -1;
+        _id -= 10;
+    }
+    return _id;
+}
+QT_WARNING_POP
+QT_END_MOC_NAMESPACE
+
+==> moc_qrprocessor.cpp <==
+/****************************************************************************
+** Meta object code from reading C++ file 'qrprocessor.h'
+**
+** Created by: The Qt Meta Object Compiler version 67 (Qt 5.15.3)
+**
+** WARNING! All changes made in this file will be lost!
+*****************************************************************************/
+
+#include <memory>
+#include "qrprocessor.h"
+#include <QtCore/qbytearray.h>
+#include <QtCore/qmetatype.h>
+#if !defined(Q_MOC_OUTPUT_REVISION)
+#error "The header file 'qrprocessor.h' doesn't include <QObject>."
+#elif Q_MOC_OUTPUT_REVISION != 67
+#error "This file was generated using the moc from 5.15.3. It"
+#error "cannot be used with the include files from this version of Qt."
+#error "(The moc has changed too much.)"
+#endif
+
+QT_BEGIN_MOC_NAMESPACE
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+struct qt_meta_stringdata_QrProcessor_t {
+    QByteArrayData data[1];
+    char stringdata0[12];
+};
+#define QT_MOC_LITERAL(idx, ofs, len) \
+    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
+    qptrdiff(offsetof(qt_meta_stringdata_QrProcessor_t, stringdata0) + ofs \
+        - idx * sizeof(QByteArrayData)) \
+    )
+static const qt_meta_stringdata_QrProcessor_t qt_meta_stringdata_QrProcessor = {
+    {
+QT_MOC_LITERAL(0, 0, 11) // "QrProcessor"
+
+    },
+    "QrProcessor"
+};
+#undef QT_MOC_LITERAL
+
+static const uint qt_meta_data_QrProcessor[] = {
+
+ // content:
+       8,       // revision
+       0,       // classname
+       0,    0, // classinfo
+       0,    0, // methods
+       0,    0, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       0,       // signalCount
+
+       0        // eod
+};
+
+void QrProcessor::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
+{
+    (void)_o;
+    (void)_id;
+    (void)_c;
+    (void)_a;
+}
+
+QT_INIT_METAOBJECT const QMetaObject QrProcessor::staticMetaObject = { {
+    QMetaObject::SuperData::link<QObject::staticMetaObject>(),
+    qt_meta_stringdata_QrProcessor.data,
+    qt_meta_data_QrProcessor,
+    qt_static_metacall,
+    nullptr,
+    nullptr
+} };
+
+
+const QMetaObject *QrProcessor::metaObject() const
+{
+    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
+}
+
+void *QrProcessor::qt_metacast(const char *_clname)
+{
+    if (!_clname) return nullptr;
+    if (!strcmp(_clname, qt_meta_stringdata_QrProcessor.stringdata0))
+        return static_cast<void*>(this);
+    return QObject::qt_metacast(_clname);
+}
+
+int QrProcessor::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
+{
+    _id = QObject::qt_metacall(_c, _id, _a);
+    return _id;
+}
+QT_WARNING_POP
+QT_END_MOC_NAMESPACE
+
+==> moc_serverhandler.cpp <==
+/****************************************************************************
+** Meta object code from reading C++ file 'serverhandler.h'
+**
+** Created by: The Qt Meta Object Compiler version 67 (Qt 5.15.3)
+**
+** WARNING! All changes made in this file will be lost!
+*****************************************************************************/
+
+#include <memory>
+#include "serverhandler.h"
+#include <QtCore/qbytearray.h>
+#include <QtCore/qmetatype.h>
+#if !defined(Q_MOC_OUTPUT_REVISION)
+#error "The header file 'serverhandler.h' doesn't include <QObject>."
+#elif Q_MOC_OUTPUT_REVISION != 67
+#error "This file was generated using the moc from 5.15.3. It"
+#error "cannot be used with the include files from this version of Qt."
+#error "(The moc has changed too much.)"
+#endif
+
+QT_BEGIN_MOC_NAMESPACE
+QT_WARNING_PUSH
+QT_WARNING_DISABLE_DEPRECATED
+struct qt_meta_stringdata_ServerHandler_t {
+    QByteArrayData data[8];
+    char stringdata0[108];
+};
+#define QT_MOC_LITERAL(idx, ofs, len) \
+    Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
+    qptrdiff(offsetof(qt_meta_stringdata_ServerHandler_t, stringdata0) + ofs \
+        - idx * sizeof(QByteArrayData)) \
+    )
+static const qt_meta_stringdata_ServerHandler_t qt_meta_stringdata_ServerHandler = {
+    {
+QT_MOC_LITERAL(0, 0, 13), // "ServerHandler"
+QT_MOC_LITERAL(1, 14, 11), // "logReceived"
+QT_MOC_LITERAL(2, 26, 0), // ""
+QT_MOC_LITERAL(3, 27, 7), // "message"
+QT_MOC_LITERAL(4, 35, 18), // "deviceTableChanged"
+QT_MOC_LITERAL(5, 54, 15), // "onNewConnection"
+QT_MOC_LITERAL(6, 70, 18), // "processTextMessage"
+QT_MOC_LITERAL(7, 89, 18) // "socketDisconnected"
+
+    },
+    "ServerHandler\0logReceived\0\0message\0"
+    "deviceTableChanged\0onNewConnection\0"
+    "processTextMessage\0socketDisconnected"
+};
+#undef QT_MOC_LITERAL
+
+static const uint qt_meta_data_ServerHandler[] = {
+
+ // content:
+       8,       // revision
+       0,       // classname
+       0,    0, // classinfo
+       5,   14, // methods
+       0,    0, // properties
+       0,    0, // enums/sets
+       0,    0, // constructors
+       0,       // flags
+       2,       // signalCount
+
+ // signals: name, argc, parameters, tag, flags
+       1,    1,   39,    2, 0x06 /* Public */,
+       4,    0,   42,    2, 0x06 /* Public */,
+
+ // slots: name, argc, parameters, tag, flags
+       5,    0,   43,    2, 0x08 /* Private */,
+       6,    1,   44,    2, 0x08 /* Private */,
+       7,    0,   47,    2, 0x08 /* Private */,
+
+ // signals: parameters
+    QMetaType::Void, QMetaType::QString,    3,
+    QMetaType::Void,
+
+ // slots: parameters
+    QMetaType::Void,
+    QMetaType::Void, QMetaType::QString,    3,
+    QMetaType::Void,
+
+       0        // eod
+};
+
+void ServerHandler::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
+{
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        auto *_t = static_cast<ServerHandler *>(_o);
+        (void)_t;
+        switch (_id) {
+        case 0: _t->logReceived((*reinterpret_cast< const QString(*)>(_a[1]))); break;
+        case 1: _t->deviceTableChanged(); break;
+        case 2: _t->onNewConnection(); break;
+        case 3: _t->processTextMessage((*reinterpret_cast< const QString(*)>(_a[1]))); break;
+        case 4: _t->socketDisconnected(); break;
+        default: ;
+        }
+    } else if (_c == QMetaObject::IndexOfMethod) {
+        int *result = reinterpret_cast<int *>(_a[0]);
+        {
+            using _t = void (ServerHandler::*)(const QString & );
+            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ServerHandler::logReceived)) {
+                *result = 0;
+                return;
+            }
+        }
+        {
+            using _t = void (ServerHandler::*)();
+            if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&ServerHandler::deviceTableChanged)) {
+                *result = 1;
+                return;
+            }
+        }
+    }
+}
+
+QT_INIT_METAOBJECT const QMetaObject ServerHandler::staticMetaObject = { {
+    QMetaObject::SuperData::link<QObject::staticMetaObject>(),
+    qt_meta_stringdata_ServerHandler.data,
+    qt_meta_data_ServerHandler,
+    qt_static_metacall,
+    nullptr,
+    nullptr
+} };
+
+
+const QMetaObject *ServerHandler::metaObject() const
+{
+    return QObject::d_ptr->metaObject ? QObject::d_ptr->dynamicMetaObject() : &staticMetaObject;
+}
+
+void *ServerHandler::qt_metacast(const char *_clname)
+{
+    if (!_clname) return nullptr;
+    if (!strcmp(_clname, qt_meta_stringdata_ServerHandler.stringdata0))
+        return static_cast<void*>(this);
+    return QObject::qt_metacast(_clname);
+}
+
+int ServerHandler::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
+{
+    _id = QObject::qt_metacall(_c, _id, _a);
+    if (_id < 0)
+        return _id;
+    if (_c == QMetaObject::InvokeMetaMethod) {
+        if (_id < 5)
+            qt_static_metacall(this, _c, _id, _a);
+        _id -= 5;
+    } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
+        if (_id < 5)
+            *reinterpret_cast<int*>(_a[0]) = -1;
+        _id -= 5;
+    }
+    return _id;
+}
+
+// SIGNAL 0
+void ServerHandler::logReceived(const QString & _t1)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
+    QMetaObject::activate(this, &staticMetaObject, 0, _a);
+}
+
+// SIGNAL 1
+void ServerHandler::deviceTableChanged()
+{
+    QMetaObject::activate(this, &staticMetaObject, 1, nullptr);
+}
+QT_WARNING_POP
+QT_END_MOC_NAMESPACE
+
+==> qrprocessor.cpp <==
+#include "qrprocessor.h"
+#include <QDebug>
+
+QrProcessor::QrProcessor(QObject *parent) : QObject(parent) {
+
+}
+bool QrProcessor::validateQrCode(const QString &qrData) {
+    qDebug() << "[QR_SISTEMI] QR Analiz Ediliyor:" << qrData;
+
+    // Mock Dogrulama
+    // MEPSAN_ ile başlıyorsa geçerli
+    if (qrData.startsWith("MEPSAN_")) {
+        qDebug() << "[QR_SISTEMI] QR Kodu Bulundu.";
+        return true;
+    } else {
+        qDebug() << "[QR_SISTEMI] HATA: Gecersiz QR Kodu";
+        return false;
+    }
+}
+
+
+
+
+==> serverhandler.cpp <==
+#include "serverhandler.h"
+#include "eventlogger.h"
+#include <QDebug>
+#include <QJsonDocument>
+#include <QJsonObject>
+
+ServerHandler::ServerHandler(quint16 port, QObject *parent)
+    : QObject(parent),
+      webSocketServer(new QWebSocketServer(QStringLiteral("Mepsan Server"),
+                                           QWebSocketServer::NonSecureMode,
+                                           this)) {
+
+  dbManager.connectToDatabase();
+
+  webApi = new WebApiHandler(&dbManager, this);
+
+  if (webSocketServer->listen(QHostAddress::Any, port)) {
+    emitLog(
+        QString("[SERVER] WebSocket sunucusu baslatildi. Port: %1").arg(port));
+    emitLog("[CORE] System Architect: Baris Can Arman");
+    connect(webSocketServer, &QWebSocketServer::newConnection, this,
+            &ServerHandler::onNewConnection);
+  } else {
+    emitLog("[HATA] Server baslatilamadi!");
+  }
+}
+
+ServerHandler::~ServerHandler() {
+  webSocketServer->close();
+  qDeleteAll(clients.begin(), clients.end());
+}
+
+void ServerHandler::emitLog(const QString &msg) {
+  qDebug() << msg;
+  emit logReceived(msg);
+}
+
+void ServerHandler::broadcastMessage(const QJsonObject &messageObj) {
+  QJsonDocument doc(messageObj);
+  QString msgString = doc.toJson(QJsonDocument::Compact);
+  for (QWebSocket *client : qAsConst(clients)) {
+    if (client->isValid()) {
+      client->sendTextMessage(msgString);
+    }
+  }
+}
+
+void ServerHandler::onNewConnection() {
+  QWebSocket *clientSocket = webSocketServer->nextPendingConnection();
+
+  connect(clientSocket, &QWebSocket::textMessageReceived, this,
+          &ServerHandler::processTextMessage);
+  connect(clientSocket, &QWebSocket::disconnected, this,
+          &ServerHandler::socketDisconnected);
+
+  clients << clientSocket;
+  QString ip = clientSocket->peerAddress().toString();
+  if (ip.startsWith("::ffff:")) {
+    ip = ip.mid(7);
+  }
+  emitLog(QString("[BAGLANTI] Yeni cihaz baglandi. IP: %1").arg(ip));
+}
+
+void ServerHandler::processTextMessage(const QString &message) {
+  QWebSocket *clientSocket = qobject_cast<QWebSocket *>(sender());
+  if (!clientSocket)
+    return;
+
+  QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
+
+  if (doc.isNull() || !doc.isObject()) {
+    clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"Yanlis format. JSON bekleniyor.\"}");
+    return;
+  }
+
+  QJsonObject jsonObj = doc.object();
+  QString command = jsonObj["command"].toString();
+
+  // 1. VIP KONTROL: LOGIN
+  if (command == "WEB_LOGIN") {
+      QString username = jsonObj["username"].toString();
+      QString password = jsonObj["password"].toString();
+
+      QJsonObject response;
+      response["command"] = "WEB_LOGIN_RESPONSE";
+
+      if (username == "admin" && password == "mepsan2026") {
+          response["status"] = "ok";
+          response["message"] = QString::fromUtf8("Servera Başarıyla Girildi.");
+      } else {
+          response["status"] = "error";
+          response["message"] = QString::fromUtf8("Yanlış kullanıcı adı veya şifre!");
+      }
+
+      clientSocket->sendTextMessage(QJsonDocument(response).toJson(QJsonDocument::Compact));
+      return; // Login komutuysa burada bitir
+  }
+
+  // 2. VIP KONTROL: CIHAZ EKLE
+  if (command == "ADD_DEVICE") {
+      QJsonObject payload = jsonObj["payload"].toObject();
+      QString mac = payload["mac_address"].toString();
+      QString name = payload["device_name"].toString();
+
+      // Burada aslında dbManager.addDevice() çağırılmalı ama basit tutalım:
+      dbManager.updateLastSeen(mac, "BİLİNMİYOR"); // Cihazın MAC adresini listeye katar
+      dbManager.updateLastUser(mac, name);
+
+      QJsonObject response;
+      response["command"] = "ADD_DEVICE_RESPONSE";
+      response["status"] = "ok";
+      response["message"] = QString::fromUtf8("Cihaz başarıyla eklendi.");
+
+      clientSocket->sendTextMessage(QJsonDocument(response).toJson(QJsonDocument::Compact));
+      emit deviceTableChanged(); // Arayüzü güncelle
+      return;
+  }
+
+  // 3. WEB API KOMUTLARI
+  if (command == "GET_PENDING_CARDS" || command == "APPROVE_CARD" || command == "GET_ALL_DASHBOARD_DATA" ||
+      command == "DELETE_DEVICES" || command == "DELETE_PERSONNEL" || command == "EDIT_PERSONNEL" ||
+      command == "CANCEL_REQUESTS" || command == "DELETE_REQUESTS" || command == "DELETE_PENDING") {
+
+      QJsonObject apiResponse = webApi->processWebRequest(jsonObj);
+      QJsonDocument responseDoc(apiResponse);
+      clientSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+
+      if (apiResponse["status"].toString() == "ok" && command != "GET_ALL_DASHBOARD_DATA" && command != "GET_PENDING_CARDS") {
+          emit deviceTableChanged();
+          emit requestTableChanged();
+      }
+      return;
+  }
+
+  // -------------------------------------------------------------
+  // BURADAN AŞAĞISI NORMAL SAHA CIHAZLARI (MAC ADRESLI) ICIN
+  // -------------------------------------------------------------
+
+  QString rawMac = jsonObj["mac_address"].toString().trimmed();
+  QString macAddress = rawMac.toUpper();
+
+  if (macAddress.isEmpty()) {
+    clientSocket->sendTextMessage(
+        "{\"status\":\"error\", \"message\":\"MAC adresi bulunamadi.\"}");
+    return;
+  }
+
+  if (command == "GET_EVENTS_SINCE") {
+      QString since = jsonObj["since"].toString();
+
+      if (since.isEmpty()) {
+          clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"'since' parametresi eksik.\"}");
+          return;
+      }
+
+      EventLogger eventLogger;
+      QJsonArray events = eventLogger.getEventsSince(since);
+
+      QJsonObject response;
+      response["status"] = "ok";
+      response["command"] = "GET_EVENTS_SINCE_RESPONSE";
+      response["data"] = events;
+
+      QJsonDocument responseDoc(response);
+      clientSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+
+      emitLog(QString("[SYNC] %1 icin %2 tarihinden sonraki %3 olay gonderildi.")
+              .arg(macAddress, since, QString::number(events.size())));
+      return;
+  }
+
+  // Whitelist kontrolu
+  bool isAuthorized = dbManager.isMacAuthorized(macAddress);
+
+  emitLog(
+      QString(
+          "[DEBUG] Gelen MAC (ham): '%1'  |  Normalize: '%2'  |  Yetkili: %3")
+          .arg(rawMac, macAddress, isAuthorized ? "EVET" : "HAYIR"));
+
+  if (!isAuthorized) {
+    emitLog(QString("[GUVENLIK] Kayitsiz cihaz reddedildi. MAC: %1")
+                .arg(macAddress));
+    clientSocket->sendTextMessage(
+        "{\"status\":\"error\", \"message\":\"Cihaz kayitli degil. Lutfen MAC adresini sunucuya ekletin.\"}");
+    clientSocket->close();
+    return;
+  }
+
+  QString ipAddress = clientSocket->peerAddress().toString();
+  if (ipAddress.startsWith("::ffff:")) {
+    ipAddress = ipAddress.mid(7);
+  }
+
+  dbManager.updateLastSeen(macAddress, ipAddress);
+
+  QString detectedUser = jsonObj["username"].toVariant().toString();
+  if (detectedUser.isEmpty())
+    detectedUser = jsonObj["requester_id"].toVariant().toString();
+  if (detectedUser.isEmpty())
+    detectedUser = jsonObj["user_id"].toVariant().toString();
+  if (!detectedUser.isEmpty()) {
+    QString personName = dbManager.getPersonnelName(detectedUser);
+    if (!personName.isEmpty()) {
+      dbManager.updateLastUser(macAddress, personName);
+    } else {
+      bool isNumeric;
+      detectedUser.toInt(&isNumeric);
+      if (!isNumeric) {
+         dbManager.updateLastUser(macAddress, detectedUser);
+      }
+    }
+  }
+
+  emitLog(QString("[KOMUT] MAC: %1 | Komut: %2").arg(macAddress, command));
+
+  // Esya alma
+  if (command == "CHECKOUT_ITEM") {
+    QString qrData = jsonObj["qr_data"].toString();
+    QString username = jsonObj["username"].toString();
+
+    if (qrData.isEmpty() || username.isEmpty()) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Checkout icin yetersiz bilgi.\"}");
+      return;
+    }
+
+    if (dbManager.checkoutInventoryItem(qrData, username)) {
+      dbManager.updateLastAction(macAddress, "CHECKOUT: " + qrData);
+      emit deviceTableChanged();
+      clientSocket->sendTextMessage(
+          "{\"status\":\"ok\", \"message\":\"Checkout basariyla yapildi.\"}");
+    } else {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Checkout basarisiz. Esya kullanımda veya bulunamadi.\"}");
+    }
+    return;
+  }
+
+  // Esya geri verme
+  else if (command == "CHECKIN_ITEM") {
+    QString qrData = jsonObj["qr_data"].toString();
+
+    if (qrData.isEmpty()) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"QR bos olamaz.\"}");
+      return;
+    }
+
+    if (dbManager.checkinInventoryItem(qrData)) {
+      dbManager.updateLastAction(macAddress, "CHECKIN: " + qrData);
+      emit deviceTableChanged();
+      clientSocket->sendTextMessage("{\"status\":\"ok\", \"message\":\"Esya envantere geri donduruldu.\"}");
+    } else {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Checkin basarisiz. Esya bulunamadi.\"}");
+    }
+    return;
+  }
+
+  // Test
+  else if (command == "TEST") {
+    clientSocket->sendTextMessage(
+        "{\"status\":\"ok\", \"message\":\"Test basariyla tamamlandi.\"}");
+  }
+
+  // Qr kodu tanima
+  else if (command == "PROCESS_QR") {
+    QString qrData = jsonObj["qr_data"].toString();
+
+    if (qrData.isEmpty()) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"QR kodu bos olamaz.\"}");
+      return;
+    }
+
+    bool isValid = qrProcessor.validateQrCode(qrData);
+    if (!isValid) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Gecersiz QR kodu.\"}");
+      return;
+    }
+
+    dbManager.updateLastAction(macAddress, "QR_QUERY: " + qrData);
+
+    QJsonObject itemDetails = dbManager.getInventoryItem(qrData);
+    QJsonObject response;
+    if (itemDetails["found"].toBool()) {
+      response["status"] = "ok";
+      response["message"] = "Esya envanterde var.";
+      response["item_info"] = itemDetails;
+    } else {
+      response["status"] = "hata";
+      response["message"] = "QR kodu bulundu fakat esya envanterde yok.";
+    }
+    QJsonDocument responseDoc(response);
+    clientSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+    return;
+  }
+
+    else if (command == "FULFILL_REQUEST") {
+      QString id = jsonObj["id"].toString();
+      int fulfilledQty = jsonObj["fulfilled_quantity"].toInt();
+      QString status = jsonObj["status"].toString();
+      QString timestampField = jsonObj["timestamp_field"].toString();
+      QString timestampValue = jsonObj["timestamp_value"].toString();
+
+      if (id.isEmpty()) {
+        clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"Talep ID eksik.\"}");
+        return;
+      }
+
+      if (dbManager.fulfillRequest(id, fulfilledQty, status, timestampField, timestampValue)) {
+        dbManager.updateLastAction(macAddress, "FULFILL: " + id + " -> " + QString::number(fulfilledQty));
+        emit deviceTableChanged();
+        emit requestTableChanged();
+        clientSocket->sendTextMessage("{\"status\":\"ok\", \"message\":\"Kısmi karşılama başarıyla kaydedildi.\"}");
+
+        QJsonObject eventMsg;
+        eventMsg["type"] = "event";
+        eventMsg["event_name"] = "REQUEST_FULFILLED";
+        eventMsg["payload"] = jsonObj;
+        broadcastMessage(eventMsg);
+      } else {
+        clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"Karşılama güncellenemedi.\"}");
+      }
+      return;
+    }
+
+  // Talep olusturma
+  else if (command == "CREATE_REQUEST") {
+    QString id = jsonObj["id"].toString();
+    QString reqId = jsonObj["requester_id"].toString();
+    QString depId = jsonObj["department_id"].toString();
+    QString prodId = jsonObj["product_id"].toString();
+    int qty = jsonObj["quantity"].toInt();
+    QString status = jsonObj["status"].toString();
+    QString createdAt = jsonObj["created_at"].toString();
+    QString priority = jsonObj["priority"].toString();
+
+    if (id.isEmpty() || reqId.isEmpty()) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Eksik talep bilgileri.\"}");
+      return;
+    }
+
+    if (dbManager.createRequest(id, reqId, depId, prodId, qty, status,
+                                createdAt, priority)) {
+      QString reqName = dbManager.getPersonnelName(reqId);
+      if (reqName.isEmpty()) reqName = reqId;
+      dbManager.updateLastAction(macAddress, "CREATE_REQUEST: " + reqName);
+      emit deviceTableChanged();
+      emit requestTableChanged();
+      clientSocket->sendTextMessage(
+          "{\"status\":\"ok\", \"message\":\"Talep basariyla olusturuldu.\"}");
+
+      QJsonObject eventMsg;
+      eventMsg["type"] = "event";
+      eventMsg["event_name"] = "REQUEST_CREATED";
+      eventMsg["payload"] = jsonObj;
+      broadcastMessage(eventMsg);
+    } else {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Talep olusturulamadi.\"}");
+    }
+    return;
+  }
+
+  // Talepleri Getir
+  else if (command == "GET_REQUESTS") {
+    QString userId = jsonObj["user_id"].toString();
+    QString depId = jsonObj["department_id"].toString();
+
+    QJsonArray requests = dbManager.getRequests(userId, depId);
+
+    QJsonObject response;
+    response["status"] = "ok";
+    response["command"] = "GET_REQUESTS_RESPONSE";
+    response["data"] = requests;
+
+    QJsonDocument responseDoc(response);
+    clientSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+    return;
+  }
+
+  // Envanteri Yolla
+    else if (command == "GET_PARTS") {
+      QJsonArray inventoryArray = dbManager.getAllInventoryItems();
+
+      QJsonObject response;
+      response["status"] = "ok";
+      response["command"] = "GET_PARTS_RESPONSE";
+      response["data"] = inventoryArray;
+
+      QJsonDocument responseDoc(response);
+      clientSocket->sendTextMessage(responseDoc.toJson(QJsonDocument::Compact));
+
+      emitLog(QString("[WEB API] Envanter verisi gonderildi. MAC: %1").arg(macAddress));
+      return;
+    }
+
+  // Talep Durumunu Guncelle
+  else if (command == "UPDATE_REQUEST_STATUS") {
+    QString id = jsonObj["id"].toString();
+    QString status = jsonObj["status"].toString();
+    QString timestampField = jsonObj["timestamp_field"].toString();
+    QString timestampValue = jsonObj["timestamp_value"].toString();
+
+    if (id.isEmpty() || status.isEmpty()) {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Eksik guncelleme bilgileri.\"}");
+      return;
+    }
+
+    if (dbManager.updateRequestStatus(id, status, timestampField,
+                                      timestampValue)) {
+      dbManager.updateLastAction(macAddress,
+                                 "UPDATE_STATUS: " + id + " -> " + status);
+      emit deviceTableChanged();
+      emit requestTableChanged();
+      clientSocket->sendTextMessage(
+          "{\"status\":\"ok\", \"message\":\"Talep durumu guncellendi.\"}");
+
+      QJsonObject eventMsg;
+      eventMsg["type"] = "event";
+      eventMsg["event_name"] = "REQUEST_STATUS_UPDATED";
+      eventMsg["payload"] = jsonObj;
+      broadcastMessage(eventMsg);
+    } else {
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"message\":\"Talep guncellenemedi.\"}");
+    }
+    return;
+  }
+
+  // Talep İptal
+  else if (command == "CANCEL_REQUEST" || command == "REJECT_REQUEST") {
+    QString reqId = jsonObj["requestId"].toString();
+    if (reqId.isEmpty()) reqId = jsonObj["id"].toString();
+
+    QString reason = jsonObj["reason"].toString();
+    QString note = jsonObj["note"].toString();
+
+    if (reqId.isEmpty()) {
+      clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"Talep ID eksik.\"}");
+      return;
+    }
+
+    QString fullReason = reason;
+    if (!note.isEmpty()) {
+       fullReason += " (" + note + ")";
+    }
+
+    QString timeStr = QDateTime::currentDateTime().toString(Qt::ISODate);
+
+    if (dbManager.cancelRequest(reqId, fullReason, timeStr)) {
+      dbManager.updateLastAction(macAddress, command + ": " + reqId);
+      emit deviceTableChanged();
+      emit requestTableChanged();
+      clientSocket->sendTextMessage("{\"status\":\"ok\", \"message\":\"Talep iptal edildi.\"}");
+
+      QJsonObject eventMsg;
+      eventMsg["type"] = "event";
+      eventMsg["event_name"] = "REQUEST_STATUS_UPDATED";
+      eventMsg["payload"] = jsonObj;
+      broadcastMessage(eventMsg);
+    } else {
+      clientSocket->sendTextMessage("{\"status\":\"error\", \"message\":\"Talep iptal edilemedi veya zaten kapali.\"}");
+    }
+    return;
+  }
+
+  // NFC Kart ile Giris
+  else if (command == "CARD_LOGIN") {
+    QString nfcUid = jsonObj["nfc_uid"].toString().trimmed();
+
+    if (nfcUid.isEmpty()) {
+      emitLog(
+          QString("[KART RED] Bos UID gonderildi! (Frontend hatasi) MAC: %1")
+              .arg(macAddress));
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"error_code\":\"MISSING_UID\"}");
+      return;
+    }
+
+    QJsonObject personnel = dbManager.lookupByNfcUid(nfcUid);
+
+    if (personnel["found"].toBool()) {
+      QString personName = personnel["name"].toString();
+      dbManager.updateLastAction(macAddress, "CARD_LOGIN: " + personName);
+      dbManager.updateLastUser(macAddress, personName);
+      emit deviceTableChanged();
+
+      emitLog(
+          QString("[KART GIRIS] %1 | Departman: %2 | MAC: %3")
+              .arg(personName, personnel["department"].toString(), macAddress));
+
+      QJsonObject response;
+      response["status"] = "ok";
+      response["message"] = "Giris basarili.";
+      response["user"] = personnel;
+      QJsonDocument doc(response);
+      clientSocket->sendTextMessage(doc.toJson(QJsonDocument::Compact));
+    } else {
+      emitLog(QString("[KART RED] Tanimsiz kart okutuldu. Havuza atiliyor. UID: %1 | MAC: %2")
+                  .arg(nfcUid, macAddress));
+      dbManager.addPendingCard(nfcUid);
+      clientSocket->sendTextMessage(
+          "{\"status\":\"error\", \"error_code\":\"CARD_NOT_FOUND\"}");
+    }
+    return;
+  }
+
+  else {
+    emitLog(QString("[UYARI] Bilinmeyen komut: %1").arg(command));
+    clientSocket->sendTextMessage(
+        "{\"status\":\"error\", \"message\":\"Bilinmeyen komut.\"}");
+  }
+}
+
+void ServerHandler::socketDisconnected() {
+  QWebSocket *clientSocket = qobject_cast<QWebSocket *>(sender());
+  if (clientSocket) {
+    QString ip = clientSocket->peerAddress().toString();
+    if (ip.startsWith("::ffff:")) {
+      ip = ip.mid(7);
+    }
+    emitLog(QString("[BAGLANTI KOPTU] IP: %1").arg(ip));
+    clients.removeAll(clientSocket);
+    clientSocket->deleteLater();
+  }
+}
+
+==> test.cpp <==
+#include "test.h"
+#include <QDebug>
+test::test(QObject *parent)
+    : QObject{parent}
+{
+     QObject::connect(this, &test::deneme, this, &test::gelen );
+     emit deneme("deneme");
+
+}
+
+void test::gelen(QString a) {
+    qDebug() << "ADASDAS " << a;
+}
+
+==> webapihandler.cpp <==
+#include "webapihandler.h"
+#include <QDebug>
+#include <QDateTime>
+
+WebApiHandler::WebApiHandler(databasemanager *db, QObject *parent)
+    : QObject(parent), dbManager(db)
+{
+}
+
+QJsonObject WebApiHandler::processWebRequest(const QJsonObject &requestObj)
+{
+    QString command = requestObj["command"].toString();
+    QJsonObject response;
+
+    if (command == "GET_ALL_DASHBOARD_DATA") {
+        response["status"] = "ok";
+        response["devices"] = dbManager->getAllDevices();
+        response["requests"] = dbManager->getRequests();
+        response["inventory"] = dbManager->getAllInventoryItems();
+        response["personnel"] = dbManager->getAllPersonnel();
+        response["pending_cards"] = dbManager->getPendingCards();
+    }
+    else if (command == "GET_PENDING_CARDS") {
+        response = handleGetPendingCards();
+    }
+    else if (command == "APPROVE_CARD") {
+        response = handleApproveCard(requestObj["payload"].toObject());
+    }
+    else if (command == "DELETE_DEVICES") {
+        QJsonArray macs = requestObj["payload"].toArray();
+        for (const auto& val : macs) { dbManager->removeDevice(val.toString()); }
+        response["status"] = "ok";
+        response["message"] = "Seçili cihazlar başarıyla silindi.";
+    }
+    else if (command == "DELETE_PERSONNEL") {
+        QJsonArray ids = requestObj["payload"].toArray();
+        for (const auto& val : ids) { dbManager->removePersonnel(val.toString().toInt()); }
+        response["status"] = "ok";
+        response["message"] = "Seçili personeller başarıyla silindi.";
+    }
+    else if (command == "DELETE_PENDING") {
+            QJsonArray uids = requestObj["payload"].toArray();
+            for (const auto& val : uids) {
+                dbManager->removePendingCard(val.toString());
+            }
+            response["status"] = "ok";
+            response["message"] = "Seçili kartlar havuzdan başarıyla temizlendi.";
+        }
+    else if (command == "CANCEL_REQUESTS") {
+        QJsonArray ids = requestObj["payload"].toArray();
+        QString timeStr = QDateTime::currentDateTime().toString(Qt::ISODate);
+        for (const auto& val : ids) { dbManager->cancelRequest(val.toString(), "Web üzerinden iptal edildi.", timeStr); }
+        response["status"] = "ok";
+        response["message"] = "Seçili talepler iptal edildi.";
+    }
+    else if (command == "DELETE_REQUESTS") {
+            QJsonArray ids = requestObj["payload"].toArray();
+            for (const auto& val : ids) {
+                dbManager->deleteRequest(val.toString());
+            }
+            response["status"] = "ok";
+            response["message"] = "Seçili talepler veritabanından KALICI olarak silindi.";
+    }
+    else if (command == "EDIT_PERSONNEL") {
+        QJsonObject p = requestObj["payload"].toObject();
+        int personId = p["id"].toString().toInt();
+
+        if (dbManager->updatePersonnel(personId, p["nfc_uid"].toString(), p["name"].toString(), p["department"].toString(), p["role"].toString())) {
+            response["status"] = "ok";
+            response["message"] = "Personel başarıyla güncellendi.";
+        } else {
+            response["status"] = "error";
+            response["message"] = "Hata! NFC UID çakışması olabilir.";
+        }
+    }
+    else {
+        response["status"] = "error";
+        response["message"] = "Bilinmeyen Web API Komutu!";
+    }
+
+    response["command"] = command + "_RESPONSE";
+    return response;
+}
+
+QJsonObject WebApiHandler::handleGetPendingCards()
+{
+    QJsonObject response;
+
+    QJsonArray pendingCards = dbManager->getPendingCards();
+
+    response["status"] = "ok";
+    response["message"] = "Havuz verileri basariyla cekildi.";
+    response["data"] = pendingCards;
+
+    return response;
+}
+
+QJsonObject WebApiHandler::handleApproveCard(const QJsonObject &payload)
+{
+    QJsonObject response;
+
+    QString nfcUid = payload["nfc_uid"].toString();
+    QString name = payload["name"].toString();
+    QString dept = payload["department"].toString();
+    QString role = payload["role"].toString();
+
+    if (nfcUid.isEmpty() || name.isEmpty()) {
+        response["status"] = "error";
+        response["message"] = "NFC UID ve Ad Soyad bos olamaz.";
+        return response;
+    }
+
+    if (dbManager->addPersonnel(nfcUid, name, dept, role)) {
+        dbManager->removePendingCard(nfcUid);
+        response["status"] = "ok";
+        response["message"] = "Kart basariyla onaylandi ve personele donusturuldu.";
+    } else {
+        response["status"] = "error";
+        response["message"] = "Kart eklenemedi. Zaten sisteme kayitli olabilir.";
+    }
+
+    return response;
+}
+
+==> authmanager.h <==
+#ifndef AUTHMANAGER_H
+#define AUTHMANAGER_H
+
+#include <QObject>
+
+class AuthManager : public QObject
+{
+    Q_OBJECT
+public:
+    explicit AuthManager(QObject *parent = nullptr);
+
+signals:
+
+};
+
+#endif // AUTHMANAGER_H
+
+==> databasemanager.h <==
+#ifndef DATABASEMANAGER_H
+#define DATABASEMANAGER_H
+
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSqlDatabase>
+#include <QString>
+
+class databasemanager {
+public:
+  databasemanager();
+
+  // Tablo yoksa oluştaracak fonksiyon
+  bool connectToDatabase();
+
+  bool deleteRequest(const QString &reqId);
+
+  // MAC database kontrolü
+  bool isMacAuthorized(const QString &macAddress);
+
+  // Whitelist
+  bool addToWhitelist(const QString &macAddress, const QString &deviceName);
+
+  QJsonArray getAllDevices();
+
+  // Cihaz Silme
+  bool removeDevice(const QString &macAddress);
+
+  bool updateLastSeen(const QString &macAddress, const QString &ipAddress = "");
+  bool updateLastUser(const QString &macAddress, const QString &username);
+
+  bool updateLastAction(const QString &macAddress,
+                        const QString &actionDetails);
+
+   bool logRequestEvent(const QString &requestId, const QString &oldStatus, const QString &newStatus);
+   QJsonArray getEventsSince(const QString &sinceTimestamp);
+
+  // Talepler
+  bool createRequest(const QString &id, const QString &requesterId,
+                     const QString &departmentId, const QString &productId,
+                     int quantity, const QString &status,
+                     const QString &createdAt,
+                     const QString &priority = "NORMAL");
+  QJsonArray getRequests(const QString &userId = "",
+                         const QString &departmentId = "");
+  bool updateRequestStatus(const QString &id, const QString &status,
+                           const QString &timestampField,
+                           const QString &timestampValue);
+
+  bool cancelRequest(const QString &id, const QString &cancelReason,
+                     const QString &cancelledAt);
+  bool updatePriority(const QString &id, const QString &priority);
+  bool fulfillRequest(const QString &id, int fulfilledQuantity,
+                      const QString &newStatus, const QString &readyAt);
+  bool escalateRequest(const QString &id);
+  QJsonArray getEscalatedRequests();
+
+  // Envanter Fonksiyonlari
+  QJsonArray getAllInventoryItems();
+  bool addInventoryItem(const QString &qrCode, const QString &itemName, const QString &department);
+  QJsonObject getInventoryItem(const QString &qrCode);
+  bool checkoutInventoryItem(const QString &qrCode, const QString &username);
+  bool checkinInventoryItem(const QString &qrCode);
+  bool fulfillRequest(const QString &id, int qty, const QString &status, const QString &timeField, const QString &timeValue);
+
+  bool addPendingCard(const QString &nfcUid, const QString &name = "");
+    bool removePendingCard(const QString &nfcUid);
+    QJsonArray getPendingCards();
+
+  // Personel Fonksiyonlari
+  bool addPersonnel(const QString &nfcUid, const QString &name,
+                    const QString &department, const QString &role = "saha_personeli");
+  bool removePersonnel(int id);
+  bool updatePersonnel(int id, const QString &nfcUid, const QString &name,
+                       const QString &department, const QString &role);
+
+  QJsonArray getAllPersonnel();
+  QJsonObject lookupByNfcUid(const QString &nfcUid);
+  QString getPersonnelName(const QString &idOrNfc);
+
+private:
+  QSqlDatabase db;
+};
+
+#endif // DATABASEMANAGER_H
+
+==> eventlogger.h <==
+#ifndef EVENTLOGGER_H
+#define EVENTLOGGER_H
+
+#include <QString>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QDateTime>
+#include <QDebug>
+
+class EventLogger {
+public:
+    EventLogger();
+
+    bool initTable();
+
+    bool logRequestEvent(const QString &requestId, const QString &oldStatus, const QString &newStatus);
+
+    QJsonArray getEventsSince(const QString &sinceTimestamp);
+};
+
+#endif // EVENTLOGGER_H
+
+==> inventorymanager.h <==
+#ifndef INVENTORYMANAGER_H
+#define INVENTORYMANAGER_H
+
+#include <QObject>
+#include <QMap>
+#include <QJsonObject>
+
+// Esyanın Özellikleri
+struct InventoryItem {
+    QString qrCode;
+    QString name;
+    QString status;
+    QString assignedTo;
+};
+
+class InventoryManager
+{
+public:
+    InventoryManager();
+
+    QJsonObject getItemDetails(const QString &qrCode);
+    QJsonArray getAllItems();
+    bool checkoutItem(const QString &qrCode, const QString &username);
+    bool checkinItem(const QString &qrCode);
+
+private:
+    // Mock Database
+    QMap<QString, InventoryItem> mockDatabase;
+
+};
+
+#endif // INVENTORYMANAGER_H
+
+==> mainwindow.h <==
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
+
+#include "databasemanager.h"
+#include "serverhandler.h"
+#include <QComboBox>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMainWindow>
+#include <QPushButton>
+#include <QSettings>
+#include <QTableWidget>
+#include <QTextEdit>
+#include <QTimer>
+
+class MainWindow : public QMainWindow {
+  Q_OBJECT
+
+public:
+  explicit MainWindow(QWidget *parent = nullptr);
+  ~MainWindow();
+
+private slots:
+  void onAddDevice();
+  void onRemoveDevice();
+  void onLogReceived(const QString &message);
+  void onDeviceTableChanged();
+  void onCancelRequest();
+  void onClearLog();
+  void refreshInventoryTable();
+  void onAddPersonnel();
+  void onRemovePersonnel();
+  void onEditPersonnel();
+  void refreshPersonnelTable();
+  void onApprovePendingCard();
+  void refreshPendingTable();
+
+private:
+  void setupUi();
+  void startServer();
+  void refreshDeviceTable();
+  void refreshRequestTable();
+
+  // --- Cihaz Yönetimi Sekmesi ---
+  QTableWidget *deviceTable;
+  QLineEdit    *macInput;
+  QLineEdit    *nameInput;
+  QPushButton  *addBtn;
+  QPushButton  *removeBtn;
+
+  // --- Log Sekmesi ---
+  QTextEdit   *logView;
+  QPushButton *clearLogBtn;
+
+  // --- Talepler Sekmesi ---
+  QTableWidget *requestTable;
+  QPushButton  *refreshRequestBtn;
+  QPushButton  *cancelRequestBtn;
+
+  // --- Zimmet/Envanter Sekmesi ---
+  QTableWidget *inventoryTable;
+  QPushButton  *refreshInventoryBtn;
+
+  // --- Personel Sekmesi ---
+  QTableWidget *personnelTable;
+  QLineEdit    *nfcInput;
+  QLineEdit    *personnelNameInput;
+  QComboBox    *personnelDeptInput;
+  QComboBox    *personnelRoleInput;
+  QPushButton  *addPersonnelBtn;
+  QPushButton  *removePersonnelBtn;
+  QPushButton  *editPersonnelBtn;
+  QTableWidget *pendingTable;
+  QPushButton *approveCardBtn;
+
+  // --- Sunucu Durumu ---
+  QLabel *statusLabel;
+
+  ServerHandler  *server;
+  databasemanager dbManager;
+  QSettings      *settings;
+};
+
+#endif // MAINWINDOW_H
+
+==> moc_predefs.h <==
+#define __SSP_STRONG__ 3
+#define __DBL_MIN_EXP__ (-1021)
+#define __cpp_attributes 200809L
+#define __UINT_LEAST16_MAX__ 0xffff
+#define __ATOMIC_ACQUIRE 2
+#define __FLT128_MAX_10_EXP__ 4932
+#define __FLT_MIN__ 1.17549435082228750796873653722224568e-38F
+#define __GCC_IEC_559_COMPLEX 2
+#define __UINT_LEAST8_TYPE__ unsigned char
+#define __SIZEOF_FLOAT80__ 16
+#define __INTMAX_C(c) c ## L
+#define __CHAR_BIT__ 8
+#define __UINT8_MAX__ 0xff
+#define __SCHAR_WIDTH__ 8
+#define __WINT_MAX__ 0xffffffffU
+#define __FLT32_MIN_EXP__ (-125)
+#define __cpp_static_assert 200410L
+#define __ORDER_LITTLE_ENDIAN__ 1234
+#define __SIZE_MAX__ 0xffffffffffffffffUL
+#define __WCHAR_MAX__ 0x7fffffff
+#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_1 1
+#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_2 1
+#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_4 1
+#define __DBL_DENORM_MIN__ double(4.94065645841246544176568792868221372e-324L)
+#define __GCC_HAVE_SYNC_COMPARE_AND_SWAP_8 1
+#define __GCC_ATOMIC_CHAR_LOCK_FREE 2
+#define __GCC_IEC_559 2
+#define __FLT32X_DECIMAL_DIG__ 17
+#define __FLT_EVAL_METHOD__ 0
+#define __cpp_binary_literals 201304L
+#define __FLT64_DECIMAL_DIG__ 17
+#define __CET__ 3
+#define __GCC_ATOMIC_CHAR32_T_LOCK_FREE 2
+#define __cpp_variadic_templates 200704L
+#define __UINT_FAST64_MAX__ 0xffffffffffffffffUL
+#define __SIG_ATOMIC_TYPE__ int
+#define __DBL_MIN_10_EXP__ (-307)
+#define __FINITE_MATH_ONLY__ 0
+#define __FLT32X_MAX_EXP__ 1024
+#define __FLT32_HAS_DENORM__ 1
+#define __UINT_FAST8_MAX__ 0xff
+#define __cpp_rvalue_reference 200610L
+#define __FLT32_MAX_10_EXP__ 38
+#define __DEC64_MAX_EXP__ 385
+#define __INT8_C(c) c
+#define __INT_LEAST8_WIDTH__ 8
+#define __UINT_LEAST64_MAX__ 0xffffffffffffffffUL
+#define __INT_LEAST8_MAX__ 0x7f
+#define __SHRT_MAX__ 0x7fff
+#define __LDBL_MAX__ 1.18973149535723176502126385303097021e+4932L
+#define __FLT64X_MAX_10_EXP__ 4932
+#define __LDBL_IS_IEC_60559__ 2
+#define __FLT64X_HAS_QUIET_NAN__ 1
+#define __UINT_LEAST8_MAX__ 0xff
+#define __GCC_ATOMIC_BOOL_LOCK_FREE 2
+#define __FLT128_DENORM_MIN__ 6.47517511943802511092443895822764655e-4966F128
+#define __UINTMAX_TYPE__ long unsigned int
+#define __linux 1
+#define __DEC32_EPSILON__ 1E-6DF
+#define __FLT_EVAL_METHOD_TS_18661_3__ 0
+#define __OPTIMIZE__ 1
+#define __unix 1
+#define __UINT32_MAX__ 0xffffffffU
+#define __GXX_EXPERIMENTAL_CXX0X__ 1
+#define __FLT128_MIN_EXP__ (-16381)
+#define __WINT_MIN__ 0U
+#define __FLT128_MIN_10_EXP__ (-4931)
+#define __FLT32X_IS_IEC_60559__ 2
+#define __INT_LEAST16_WIDTH__ 16
+#define __SCHAR_MAX__ 0x7f
+#define __FLT128_MANT_DIG__ 113
+#define __WCHAR_MIN__ (-__WCHAR_MAX__ - 1)
+#define __INT64_C(c) c ## L
+#define __GCC_ATOMIC_POINTER_LOCK_FREE 2
+#define _FORTIFY_SOURCE 2
+#define __FLT32X_MANT_DIG__ 53
+#define __GCC_ATOMIC_CHAR16_T_LOCK_FREE 2
+#define __USER_LABEL_PREFIX__ 
+#define __FLT64X_EPSILON__ 1.08420217248550443400745280086994171e-19F64x
+#define __STDC_HOSTED__ 1
+#define __DEC64_MIN_EXP__ (-382)
+#define __DBL_DIG__ 15
+#define __FLT32_DIG__ 6
+#define __FLT_EPSILON__ 1.19209289550781250000000000000000000e-7F
+#define __GXX_WEAK__ 1
+#define __SHRT_WIDTH__ 16
+#define __FLT32_IS_IEC_60559__ 2
+#define __LDBL_MIN__ 3.36210314311209350626267781732175260e-4932L
+#define __DBL_IS_IEC_60559__ 2
+#define __DEC32_MAX__ 9.999999E96DF
+#define __cpp_threadsafe_static_init 200806L
+#define __FLT64X_DENORM_MIN__ 3.64519953188247460252840593361941982e-4951F64x
+#define __FLT32X_HAS_INFINITY__ 1
+#define __INT32_MAX__ 0x7fffffff
+#define __unix__ 1
+#define __INT_WIDTH__ 32
+#define __SIZEOF_LONG__ 8
+#define __STDC_IEC_559__ 1
+#define __STDC_ISO_10646__ 201706L
+#define __UINT16_C(c) c
+#define __DECIMAL_DIG__ 21
+#define __STDC_IEC_559_COMPLEX__ 1
+#define __FLT64_EPSILON__ 2.22044604925031308084726333618164062e-16F64
+#define __gnu_linux__ 1
+#define __INT16_MAX__ 0x7fff
+#define __FLT64_MIN_EXP__ (-1021)
+#define __FLT64X_MIN_10_EXP__ (-4931)
+#define __LDBL_HAS_QUIET_NAN__ 1
+#define __FLT64_MANT_DIG__ 53
+#define __FLT64X_MANT_DIG__ 64
+#define __GNUC__ 11
+#define __GXX_RTTI 1
+#define __pie__ 2
+#define __MMX__ 1
+#define __FLT_HAS_DENORM__ 1
+#define __SIZEOF_LONG_DOUBLE__ 16
+#define __BIGGEST_ALIGNMENT__ 16
+#define __STDC_UTF_16__ 1
+#define __FLT64_MAX_10_EXP__ 308
+#define __cpp_delegating_constructors 200604L
+#define __FLT32_HAS_INFINITY__ 1
+#define __DBL_MAX__ double(1.79769313486231570814527423731704357e+308L)
+#define __cpp_raw_strings 200710L
+#define __INT_FAST32_MAX__ 0x7fffffffffffffffL
+#define __DBL_HAS_INFINITY__ 1
+#define __SIZEOF_FLOAT__ 4
+#define __HAVE_SPECULATION_SAFE_VALUE 1
+#define __DEC32_MIN_EXP__ (-94)
+#define __INTPTR_WIDTH__ 64
+#define __FLT64X_HAS_INFINITY__ 1
+#define __UINT_LEAST32_MAX__ 0xffffffffU
+#define __FLT32X_HAS_DENORM__ 1
+#define __INT_FAST16_TYPE__ long int
+#define __MMX_WITH_SSE__ 1
+#define __LDBL_HAS_DENORM__ 1
+#define __cplusplus 201103L
+#define __cpp_ref_qualifiers 200710L
+#define __DEC32_MIN__ 1E-95DF
+#define __DEPRECATED 1
+#define __cpp_rvalue_references 200610L
+#define __DBL_MAX_EXP__ 1024
+#define __WCHAR_WIDTH__ 32
+#define __FLT32_MAX__ 3.40282346638528859811704183484516925e+38F32
+#define __DEC128_EPSILON__ 1E-33DL
+#define __SSE2_MATH__ 1
+#define __ATOMIC_HLE_RELEASE 131072
+#define __PTRDIFF_MAX__ 0x7fffffffffffffffL
+#define __amd64 1
+#define __ATOMIC_HLE_ACQUIRE 65536
+#define __GNUG__ 11
+#define __LONG_LONG_MAX__ 0x7fffffffffffffffLL
+#define __SIZEOF_SIZE_T__ 8
+#define __cpp_nsdmi 200809L
+#define __FLT64X_MIN_EXP__ (-16381)
+#define __SIZEOF_WINT_T__ 4
+#define __LONG_LONG_WIDTH__ 64
+#define __cpp_initializer_lists 200806L
+#define __FLT32_MAX_EXP__ 128
+#define __cpp_hex_float 201603L
+#define __GXX_ABI_VERSION 1016
+#define __FLT128_HAS_INFINITY__ 1
+#define __FLT_MIN_EXP__ (-125)
+#define __GCC_HAVE_DWARF2_CFI_ASM 1
+#define __x86_64 1
+#define __cpp_lambdas 200907L
+#define __INT_FAST64_TYPE__ long int
+#define __FLT64_DENORM_MIN__ 4.94065645841246544176568792868221372e-324F64
+#define __DBL_MIN__ double(2.22507385850720138309023271733240406e-308L)
+#define __FLT128_EPSILON__ 1.92592994438723585305597794258492732e-34F128
+#define __FLT64X_NORM_MAX__ 1.18973149535723176502126385303097021e+4932F64x
+#define __SIZEOF_POINTER__ 8
+#define __LP64__ 1
+#define __DBL_HAS_QUIET_NAN__ 1
+#define __FLT32X_EPSILON__ 2.22044604925031308084726333618164062e-16F32x
+#define __DECIMAL_BID_FORMAT__ 1
+#define __FLT64_MIN_10_EXP__ (-307)
+#define __FLT64X_DECIMAL_DIG__ 21
+#define __DEC128_MIN__ 1E-6143DL
+#define __REGISTER_PREFIX__ 
+#define __UINT16_MAX__ 0xffff
+#define __LDBL_HAS_INFINITY__ 1
+#define __FLT32_MIN__ 1.17549435082228750796873653722224568e-38F32
+#define __UINT8_TYPE__ unsigned char
+#define __FLT_DIG__ 6
+#define __DEC_EVAL_METHOD__ 2
+#define __DEC128_MAX__ 9.999999999999999999999999999999999E6144DL
+#define __FLT_MANT_DIG__ 24
+#define __LDBL_DECIMAL_DIG__ 21
+#define __VERSION__ "11.4.0"
+#define __UINT64_C(c) c ## UL
+#define __cpp_unicode_characters 200704L
+#define _STDC_PREDEF_H 1
+#define __INT_LEAST32_MAX__ 0x7fffffff
+#define __GCC_ATOMIC_INT_LOCK_FREE 2
+#define __FLT128_MAX_EXP__ 16384
+#define __FLT32_MANT_DIG__ 24
+#define __FLOAT_WORD_ORDER__ __ORDER_LITTLE_ENDIAN__
+#define __STDC_IEC_60559_COMPLEX__ 201404L
+#define __FLT128_HAS_DENORM__ 1
+#define __FLT32_DECIMAL_DIG__ 9
+#define __FLT128_DIG__ 33
+#define __INT32_C(c) c
+#define __DEC64_EPSILON__ 1E-15DD
+#define __ORDER_PDP_ENDIAN__ 3412
+#define __DEC128_MIN_EXP__ (-6142)
+#define __INT_FAST32_TYPE__ long int
+#define __UINT_LEAST16_TYPE__ short unsigned int
+#define unix 1
+#define __DBL_HAS_DENORM__ 1
+#define __cpp_rtti 199711L
+#define __SIZE_TYPE__ long unsigned int
+#define __UINT64_MAX__ 0xffffffffffffffffUL
+#define __FLT_IS_IEC_60559__ 2
+#define __GNUC_WIDE_EXECUTION_CHARSET_NAME "UTF-32LE"
+#define __FLT64X_DIG__ 18
+#define __INT8_TYPE__ signed char
+#define __ELF__ 1
+#define __GCC_ASM_FLAG_OUTPUTS__ 1
+#define __UINT32_TYPE__ unsigned int
+#define __FLT_RADIX__ 2
+#define __INT_LEAST16_TYPE__ short int
+#define __LDBL_EPSILON__ 1.08420217248550443400745280086994171e-19L
+#define __UINTMAX_C(c) c ## UL
+#define __GLIBCXX_BITSIZE_INT_N_0 128
+#define __k8 1
+#define __FLT32X_MIN__ 2.22507385850720138309023271733240406e-308F32x
+#define __SIG_ATOMIC_MAX__ 0x7fffffff
+#define __GCC_ATOMIC_WCHAR_T_LOCK_FREE 2
+#define __STDC_IEC_60559_BFP__ 201404L
+#define __SIZEOF_PTRDIFF_T__ 8
+#define __LDBL_DIG__ 18
+#define __FLT64_IS_IEC_60559__ 2
+#define __x86_64__ 1
+#define __FLT32X_MIN_EXP__ (-1021)
+#define __DEC32_SUBNORMAL_MIN__ 0.000001E-95DF
+#define __INT_FAST16_MAX__ 0x7fffffffffffffffL
+#define __FLT64_DIG__ 15
+#define __UINT_FAST32_MAX__ 0xffffffffffffffffUL
+#define __UINT_LEAST64_TYPE__ long unsigned int
+#define __FLT_HAS_QUIET_NAN__ 1
+#define __FLT_MAX_10_EXP__ 38
+#define __LONG_MAX__ 0x7fffffffffffffffL
+#define __FLT64X_HAS_DENORM__ 1
+#define __DEC128_SUBNORMAL_MIN__ 0.000000000000000000000000000000001E-6143DL
+#define __FLT_HAS_INFINITY__ 1
+#define __GNUC_EXECUTION_CHARSET_NAME "UTF-8"
+#define __cpp_unicode_literals 200710L
+#define __UINT_FAST16_TYPE__ long unsigned int
+#define __DEC64_MAX__ 9.999999999999999E384DD
+#define __INT_FAST32_WIDTH__ 64
+#define __CHAR16_TYPE__ short unsigned int
+#define __PRAGMA_REDEFINE_EXTNAME 1
+#define __SIZE_WIDTH__ 64
+#define __SEG_FS 1
+#define __INT_LEAST16_MAX__ 0x7fff
+#define __DEC64_MANT_DIG__ 16
+#define __INT64_MAX__ 0x7fffffffffffffffL
+#define __SEG_GS 1
+#define __FLT32_DENORM_MIN__ 1.40129846432481707092372958328991613e-45F32
+#define __SIG_ATOMIC_WIDTH__ 32
+#define __INT_LEAST64_TYPE__ long int
+#define __INT16_TYPE__ short int
+#define __INT_LEAST8_TYPE__ signed char
+#define __SIZEOF_INT__ 4
+#define __DEC32_MAX_EXP__ 97
+#define __INT_FAST8_MAX__ 0x7f
+#define __FLT128_MAX__ 1.18973149535723176508575932662800702e+4932F128
+#define __INTPTR_MAX__ 0x7fffffffffffffffL
+#define linux 1
+#define __FLT64_HAS_QUIET_NAN__ 1
+#define __FLT32_MIN_10_EXP__ (-37)
+#define __EXCEPTIONS 1
+#define __PTRDIFF_WIDTH__ 64
+#define __LDBL_MANT_DIG__ 64
+#define __cpp_range_based_for 200907L
+#define __FLT64_HAS_INFINITY__ 1
+#define __FLT64X_MAX__ 1.18973149535723176502126385303097021e+4932F64x
+#define __SIG_ATOMIC_MIN__ (-__SIG_ATOMIC_MAX__ - 1)
+#define __code_model_small__ 1
+#define __GCC_ATOMIC_LONG_LOCK_FREE 2
+#define __DEC32_MANT_DIG__ 7
+#define __k8__ 1
+#define __INTPTR_TYPE__ long int
+#define __UINT16_TYPE__ short unsigned int
+#define __WCHAR_TYPE__ int
+#define __pic__ 2
+#define __UINTPTR_MAX__ 0xffffffffffffffffUL
+#define __INT_FAST64_WIDTH__ 64
+#define __cpp_decltype 200707L
+#define __INT_FAST64_MAX__ 0x7fffffffffffffffL
+#define __GCC_ATOMIC_TEST_AND_SET_TRUEVAL 1
+#define __FLT_NORM_MAX__ 3.40282346638528859811704183484516925e+38F
+#define __FLT64X_MAX_EXP__ 16384
+#define __UINT_FAST64_TYPE__ long unsigned int
+#define __INT_MAX__ 0x7fffffff
+#define __linux__ 1
+#define __INT64_TYPE__ long int
+#define __FLT_MAX_EXP__ 128
+#define __ORDER_BIG_ENDIAN__ 4321
+#define __DBL_MANT_DIG__ 53
+#define __cpp_inheriting_constructors 201511L
+#define __SIZEOF_FLOAT128__ 16
+#define __INT_LEAST64_MAX__ 0x7fffffffffffffffL
+#define __DEC64_MIN__ 1E-383DD
+#define __WINT_TYPE__ unsigned int
+#define __UINT_LEAST32_TYPE__ unsigned int
+#define __SIZEOF_SHORT__ 2
+#define __FLT32_NORM_MAX__ 3.40282346638528859811704183484516925e+38F32
+#define __SSE__ 1
+#define __LDBL_MIN_EXP__ (-16381)
+#define __FLT64_MAX__ 1.79769313486231570814527423731704357e+308F64
+#define __amd64__ 1
+#define __WINT_WIDTH__ 32
+#define __INT_LEAST64_WIDTH__ 64
+#define __LDBL_MAX_EXP__ 16384
+#define __FLT32X_MAX_10_EXP__ 308
+#define __SIZEOF_INT128__ 16
+#define __FLT64X_IS_IEC_60559__ 2
+#define __LDBL_MAX_10_EXP__ 4932
+#define __ATOMIC_RELAXED 0
+#define __DBL_EPSILON__ double(2.22044604925031308084726333618164062e-16L)
+#define __FLT128_MIN__ 3.36210314311209350626267781732175260e-4932F128
+#define _LP64 1
+#define __UINT8_C(c) c
+#define __FLT64_MAX_EXP__ 1024
+#define __INT_LEAST32_TYPE__ int
+#define __SIZEOF_WCHAR_T__ 4
+#define __GNUC_PATCHLEVEL__ 0
+#define __FLT128_NORM_MAX__ 1.18973149535723176508575932662800702e+4932F128
+#define __FLT64_NORM_MAX__ 1.79769313486231570814527423731704357e+308F64
+#define __FLT128_HAS_QUIET_NAN__ 1
+#define __INTMAX_MAX__ 0x7fffffffffffffffL
+#define __INT_FAST8_TYPE__ signed char
+#define __FLT64X_MIN__ 3.36210314311209350626267781732175260e-4932F64x
+#define __STDCPP_THREADS__ 1
+#define __GNUC_STDC_INLINE__ 1
+#define __FLT64_HAS_DENORM__ 1
+#define __FLT32_EPSILON__ 1.19209289550781250000000000000000000e-7F32
+#define __DBL_DECIMAL_DIG__ 17
+#define __STDC_UTF_32__ 1
+#define __INT_FAST8_WIDTH__ 8
+#define __FXSR__ 1
+#define __FLT32X_MAX__ 1.79769313486231570814527423731704357e+308F32x
+#define __DBL_NORM_MAX__ double(1.79769313486231570814527423731704357e+308L)
+#define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
+#define __INTMAX_WIDTH__ 64
+#define __cpp_runtime_arrays 198712L
+#define __UINT64_TYPE__ long unsigned int
+#define __UINT32_C(c) c ## U
+#define __cpp_alias_templates 200704L
+#define __FLT_DENORM_MIN__ 1.40129846432481707092372958328991613e-45F
+#define __FLT128_IS_IEC_60559__ 2
+#define __INT8_MAX__ 0x7f
+#define __LONG_WIDTH__ 64
+#define __PIC__ 2
+#define __UINT_FAST32_TYPE__ long unsigned int
+#define __FLT32X_NORM_MAX__ 1.79769313486231570814527423731704357e+308F32x
+#define __CHAR32_TYPE__ unsigned int
+#define __FLT_MAX__ 3.40282346638528859811704183484516925e+38F
+#define __cpp_constexpr 200704L
+#define __SSE2__ 1
+#define __INT32_TYPE__ int
+#define __SIZEOF_DOUBLE__ 8
+#define __cpp_exceptions 199711L
+#define __FLT_MIN_10_EXP__ (-37)
+#define __FLT64_MIN__ 2.22507385850720138309023271733240406e-308F64
+#define __INT_LEAST32_WIDTH__ 32
+#define __INTMAX_TYPE__ long int
+#define __DEC128_MAX_EXP__ 6145
+#define __FLT32X_HAS_QUIET_NAN__ 1
+#define __ATOMIC_CONSUME 1
+#define __GNUC_MINOR__ 4
+#define __GLIBCXX_TYPE_INT_N_0 __int128
+#define __INT_FAST16_WIDTH__ 64
+#define __UINTMAX_MAX__ 0xffffffffffffffffUL
+#define __PIE__ 2
+#define __FLT32X_DENORM_MIN__ 4.94065645841246544176568792868221372e-324F32x
+#define __DBL_MAX_10_EXP__ 308
+#define __LDBL_DENORM_MIN__ 3.64519953188247460252840593361941982e-4951L
+#define __INT16_C(c) c
+#define __STDC__ 1
+#define __FLT32X_DIG__ 15
+#define __PTRDIFF_TYPE__ long int
+#define __ATOMIC_SEQ_CST 5
+#define __FLT32X_MIN_10_EXP__ (-307)
+#define __UINTPTR_TYPE__ long unsigned int
+#define __DEC64_SUBNORMAL_MIN__ 0.000000000000001E-383DD
+#define __DEC128_MANT_DIG__ 34
+#define __LDBL_MIN_10_EXP__ (-4931)
+#define __SSE_MATH__ 1
+#define __SIZEOF_LONG_LONG__ 8
+#define __cpp_user_defined_literals 200809L
+#define __FLT128_DECIMAL_DIG__ 36
+#define __GCC_ATOMIC_LLONG_LOCK_FREE 2
+#define __FLT32_HAS_QUIET_NAN__ 1
+#define __FLT_DECIMAL_DIG__ 9
+#define __UINT_FAST16_MAX__ 0xffffffffffffffffUL
+#define __LDBL_NORM_MAX__ 1.18973149535723176502126385303097021e+4932L
+#define __GCC_ATOMIC_SHORT_LOCK_FREE 2
+#define __UINT_FAST8_TYPE__ unsigned char
+#define _GNU_SOURCE 1
+#define __ATOMIC_ACQ_REL 4
+#define __ATOMIC_RELEASE 3
+
+==> qrprocessor.h <==
+#ifndef QRPROCESSOR_H
+#define QRPROCESSOR_H
+
+#include <QObject>
+#include <QString>
+
+class QrProcessor : public QObject {
+    Q_OBJECT
+public:
+    explicit QrProcessor(QObject *parent = nullptr);
+
+    // QR kod verisini işleyecek fonksiyon
+    bool validateQrCode(const QString &qrData);
+};
+
+#endif
+
+==> serverhandler.h <==
+#ifndef SERVERHANDLER_H
+#define SERVERHANDLER_H
+
+#include "webapihandler.h"
+#include "databasemanager.h"
+#include "qrprocessor.h"
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QList>
+#include <QObject>
+#include <QWebSocket>
+#include <QWebSocketServer>
+
+class ServerHandler : public QObject {
+  Q_OBJECT
+public:
+  explicit ServerHandler(quint16 port, QObject *parent = nullptr);
+  ~ServerHandler();
+
+signals:
+  // Arayüze log satırı gönderme
+  void logReceived(const QString &message);
+  // Cihaz tablosu
+  void deviceTableChanged();
+  // Talep tablosu
+  void requestTableChanged();
+
+private slots:
+  void onNewConnection();
+  void processTextMessage(const QString &message);
+  void socketDisconnected();
+
+private:
+  void broadcastMessage(const QJsonObject &messageObj);
+  void emitLog(const QString &msg);
+
+  QWebSocketServer *webSocketServer;
+  QList<QWebSocket *> clients;
+  WebApiHandler *webApi;
+
+  QrProcessor qrProcessor;
+  databasemanager dbManager;
+};
+
+#endif
+
+==> test.h <==
+#ifndef TEST_H
+#define TEST_H
+
+#include <QObject>
+
+class test : public QObject
+{
+    Q_OBJECT
+public:
+    explicit test(QObject *parent = nullptr);
+
+    void gelen(QString a);
+signals:
+    void deneme(QString a);
+
+};
+
+#endif // TEST_H
+
+==> webapihandler.h <==
+#ifndef WEBAPIHANDLER_H
+#define WEBAPIHANDLER_H
+
+#include <QObject>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include "databasemanager.h"
+
+class WebApiHandler : public QObject
+{
+    Q_OBJECT
+public:
+    explicit WebApiHandler(databasemanager *db, QObject *parent = nullptr);
+
+    QJsonObject processWebRequest(const QJsonObject &requestObj);
+
+private:
+    databasemanager *dbManager;
+
+    QJsonObject handleGetPendingCards();
+    QJsonObject handleApproveCard(const QJsonObject &payload);
+};
+
+#endif // WEBAPIHANDLER_H
