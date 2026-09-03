@@ -11,16 +11,27 @@ const scanSound = require('../../assets/sounds/scan.wav');
  * ömrüne bağlı olmadığı için (buton onPress'i gibi component dışı yerlerden
  * de çağrılabiliyor) çalma bitince `remove()` ile elle temizliyoruz, aksi
  * halde expo-audio dokümantasyonunun uyardığı gibi bellek sızıntısı olur.
+ *
+ * try/catch İLE SARILI: expo-audio native modülü henüz derlenmemiş bir
+ * development build'de (örn. bu paket eklendikten sonra yeniden build
+ * alınmamışsa) "Cannot find native module 'ExpoAudio'" fırlatır — bu, salt
+ * bir SES efekti yüzünden login gibi kritik bir akışın tamamen çökmesine
+ * (Uncaught Error ekranına) sebep olmamalı. Ses çalınamazsa sessizce
+ * atlanır, titreşim yine de çalışmaya devam eder.
  */
 function playOnce(source: number): void {
-  const player: AudioPlayer = createAudioPlayer(source);
-  const subscription = player.addListener('playbackStatusUpdate', (status) => {
-    if (status.didJustFinish) {
-      subscription.remove();
-      player.remove();
-    }
-  });
-  player.play();
+  try {
+    const player: AudioPlayer = createAudioPlayer(source);
+    const subscription = player.addListener('playbackStatusUpdate', (status) => {
+      if (status.didJustFinish) {
+        subscription.remove();
+        player.remove();
+      }
+    });
+    player.play();
+  } catch (error) {
+    console.warn('[feedback] Ses çalınamadı (native modül eksik olabilir):', error);
+  }
 }
 
 export async function successFeedback() {

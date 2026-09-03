@@ -9,7 +9,7 @@ import { navigationRef } from '../../navigation/navigationRef';
 import { getProductsByIds } from '../../api/products';
 import { getRequestById } from '../../api/requests';
 import { checkMissedUpdates } from './missedUpdates';
-import { resolveNotificationForRequest, wasRequestKnownToUser, forgetKnownStatus } from './knownStatusStore';
+import { resolveNotificationForRequest, wasRequestKnownToUser, forgetKnownStatus, getKnownStatus } from './knownStatusStore';
 import { database } from '../db';
 import NotificationRecord from '../db/models/Notification';
 import { useAuthStore } from '../../store/authStore';
@@ -118,6 +118,12 @@ async function navigateToRequest(requestId: string): Promise<void> {
   }
 }
 
+// Silinme anında talep zaten hazırlık aşamasındaysa (HAZIRLANIYOR/HAZIR),
+// personel muhtemelen malzemeyi çoktan hazırlamış/ayırmıştır — normal "silindi"
+// bildirimi yeterli değil, malzemeyi GERİ KOYMASI gerektiğini açıkça söyleyen
+// ayrı ve daha dikkat çekici bir uyarı gösteriyoruz.
+const ALREADY_PREPARED_STATUSES: RequestStatus[] = ['HAZIRLANIYOR', 'HAZIR'];
+
 /**
  * REQUEST_DELETED (backend'de henüz YOK — Barış eklemeli): bir talep
  * webden/adminden silindiğinde sunucu diğer broadcast'lerle aynı zarfla
@@ -130,7 +136,20 @@ async function handleRequestDeleted(requestId: string): Promise<void> {
   const known = await wasRequestKnownToUser(database, requestId);
   if (!known) return;
 
-  await showNotification('Talep silindi', `${requestId.toUpperCase()} numaralı talep sistemden kaldırıldı.`, requestId);
+  // Unutmadan ÖNCE son bilinen durumu oku — silinme anında hazırlık
+  // aşamasında mıydı ayrımını bundan sonra yapamayız.
+  const lastKnownStatus = await getKnownStatus(database, requestId);
+
+  if (lastKnownStatus && ALREADY_PREPARED_STATUSES.includes(lastKnownStatus)) {
+    await showNotification(
+      '⚠️ Hazırlanan talep iptal edildi',
+      `${requestId.toUpperCase()} numaralı talep hazırlık aşamasındayken sistemden silindi — malzemeyi geri koymanız gerekebilir.`,
+      requestId
+    );
+  } else {
+    await showNotification('Talep silindi', `${requestId.toUpperCase()} numaralı talep sistemden kaldırıldı.`, requestId);
+  }
+
   await forgetKnownStatus(database, requestId);
 }
 

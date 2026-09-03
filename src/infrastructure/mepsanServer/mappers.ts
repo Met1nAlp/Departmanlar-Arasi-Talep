@@ -36,6 +36,10 @@ export function mapServerRequestToRequest(raw: Record<string, unknown>): Request
     // güncellemeyle bazı yollarda snake_case gelme ihtimaline karşı ikisini
     // de kontrol ediyoruz — hangisi doluysa o kullanılır.
     requesterName: cleanTimestamp(raw.requesterName) ?? cleanTimestamp(raw.requester_name),
+    // Sunucu order_id'yi henüz GET_REQUESTS'e eklemedi (doğrulanmadı) — ama
+    // eklerse (camelCase orderId ya da snake_case order_id) sepet gruplaması
+    // sunucudan gelen taze veride de otomatik çalışsın diye burada da okunuyor.
+    orderId: cleanTimestamp(raw.orderId) ?? cleanTimestamp(raw.order_id),
     departmentId: String(raw.departmentId ?? ''),
     productId: String(raw.productId ?? ''),
     quantity: Number(raw.quantity ?? 0),

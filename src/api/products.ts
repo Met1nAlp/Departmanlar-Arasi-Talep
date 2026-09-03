@@ -2,8 +2,11 @@
 //
 // Departman seçim ekranı kaldırıldı (2026-08-26) — artık ürün önce seçiliyor
 // (QR okutarak ya da arayarak), departman bilgisi ürünün kendi departmentId
-// alanından geliyor. getProductsByDepartment() yerine tüm ürünleri dönen
-// getAllProducts() kullanılıyor.
+// alanından geliyor.
+//
+// NOT (sonradan): Envanterde 7.000'i aşkın kalem olduğu için TÜM ürünleri
+// tek seferde çeken getAllProducts() KALDIRILDI — ProductSearchScreen artık
+// kullanıcı tam kodu girince getProductByQrCode() ile tekil arama yapıyor.
 
 import { Q } from '@nozbe/watermelondb';
 import { Product } from '../types';
@@ -116,18 +119,3 @@ export async function getProductsByIds(ids: string[]): Promise<Product[]> {
   }
 }
 
-/** Departman filtresi olmadan TÜM ürünleri döner — manuel arama ekranı için. */
-export async function getAllProducts(): Promise<Product[]> {
-  try {
-    const response = await mepsanServerClient.send('GET_PARTS', { department: '' });
-    if (response.status !== 'ok') throw new Error(response.message ?? 'GET_PARTS başarısız');
-    const data = Array.isArray(response.data) ? response.data : [];
-    const mapped = data.map((raw) => mapServerPartToProduct(raw as Record<string, unknown>));
-    void upsertProductsLocally(mapped);
-    return mapped;
-  } catch {
-    const partsCol = database.get<PartModel>('parts');
-    const parts = await partsCol.query().fetch();
-    return Promise.all(parts.map(mapLocalPartToProduct));
-  }
-}

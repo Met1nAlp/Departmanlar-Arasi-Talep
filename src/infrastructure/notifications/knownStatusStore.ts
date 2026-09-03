@@ -93,6 +93,19 @@ export async function wasRequestKnownToUser(database: Database, requestId: strin
   return requestId in known;
 }
 
+/**
+ * Bir talebin en son bilinen durumunu döner (REQUEST_DELETED geldiğinde,
+ * unutmadan ÖNCE "zaten hazırlanmış mıydı" ayrımını yapabilmek için —
+ * bkz. notificationService.handleRequestDeleted).
+ */
+export async function getKnownStatus(database: Database, requestId: string): Promise<RequestStatus | undefined> {
+  const user = useAuthStore.getState().currentUser;
+  if (!user) return undefined;
+  const key = getKnownStatusesKey(user.id);
+  const known = await getKnownStatuses(database, key);
+  return known[requestId];
+}
+
 /** REQUEST_DELETED sonrası known map'ten temizlemek için — artık var olmayan bir talebin durumu takip edilmemeli. */
 export async function forgetKnownStatus(database: Database, requestId: string): Promise<void> {
   const user = useAuthStore.getState().currentUser;

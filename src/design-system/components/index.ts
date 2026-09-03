@@ -11,3 +11,4 @@ export * from './SlaTimer';
 export * from './RequestStatusStrip';
 export * from './LoadingView';
 export * from './ErrorView';
+export * from './RequestOrderGroupCard';

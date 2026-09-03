@@ -15,6 +15,8 @@ import { StatusChip } from '../../design-system/components/StatusChip';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { LoadingView } from '../../design-system/components/LoadingView';
+import { RequestOrderGroupCard } from '../../design-system/components/RequestOrderGroupCard';
+import { groupRequestsByOrder } from '../../domain/request/groupByOrder';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { getRequests } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
@@ -59,6 +61,9 @@ export default function AllRequestsScreen() {
     const haystack = `${r.id} ${products[r.productId] ?? ''}`.toLowerCase();
     return haystack.includes(query.trim().toLowerCase());
   });
+  // Aynı sepetten (orderId) gelen talepler ayrı ayrı değil, tek bir sipariş
+  // kartı altında gruplanır — bkz. groupByOrder.ts.
+  const orderGroups = groupRequestsByOrder(filtered);
 
   return (
     <Box style={{ flex: 1 }} background="white">
@@ -102,40 +107,52 @@ export default function AllRequestsScreen() {
       </Box>
 
       <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
+        data={orderGroups}
+        keyExtractor={(group) => group.key}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
-        renderItem={({ item }) => {
-          const deptName = departments.find((d) => d.id === item.departmentId)?.name ?? '—';
+        renderItem={({ item: group }) => {
+          const firstRequest = group.requests[0];
+          const deptName = departments.find((d) => d.id === firstRequest.departmentId)?.name ?? '—';
+          const totalQty = group.requests.reduce((sum, r) => sum + r.quantity, 0);
           return (
-            <Pressable
-              onPress={() => navigation.navigate('AuditTimeline', { requestId: item.id })}
-              background="surface"
-              radius="md"
-              style={{
-                width: '100%',
-                padding: spacing.md,
-                alignItems: 'flex-start',
-                borderLeftWidth: 4,
-                borderLeftColor: colors[priorityColors[item.priority]],
+            <RequestOrderGroupCard
+              group={group}
+              title={deptName}
+              subtitle={`${group.requests.length} kalem · ${totalQty} adet`}
+              renderItem={(request) => {
+                const requestDeptName = departments.find((d) => d.id === request.departmentId)?.name ?? '—';
+                return (
+                  <Pressable
+                    onPress={() => navigation.navigate('AuditTimeline', { requestId: request.id })}
+                    background="surface"
+                    radius="md"
+                    style={{
+                      width: '100%',
+                      padding: spacing.md,
+                      alignItems: 'flex-start',
+                      borderLeftWidth: 4,
+                      borderLeftColor: colors[priorityColors[request.priority]],
+                    }}
+                  >
+                    <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
+                      <Text variant="caption" color="textMuted" numberOfLines={1} style={{ letterSpacing: 1, flexShrink: 1, marginRight: spacing.sm }}>
+                        {requestDeptName.toUpperCase()}
+                      </Text>
+                      <PriorityBadge priority={request.priority} />
+                    </Stack>
+                    <Text variant="bodyBold" numberOfLines={2} style={{ marginTop: spacing.xs }}>
+                      {products[request.productId]}
+                    </Text>
+                    <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
+                      <Text variant="caption" color="textMuted">
+                        {request.quantity} adet
+                      </Text>
+                      <StatusChip status={request.status} />
+                    </Stack>
+                  </Pressable>
+                );
               }}
-            >
-              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%' }}>
-                <Text variant="caption" color="textMuted" numberOfLines={1} style={{ letterSpacing: 1, flexShrink: 1, marginRight: spacing.sm }}>
-                  {deptName.toUpperCase()}
-                </Text>
-                <PriorityBadge priority={item.priority} />
-              </Stack>
-              <Text variant="bodyBold" numberOfLines={2} style={{ marginTop: spacing.xs }}>
-                {products[item.productId]}
-              </Text>
-              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.xs }}>
-                <Text variant="caption" color="textMuted">
-                  {item.quantity} adet
-                </Text>
-                <StatusChip status={item.status} />
-              </Stack>
-            </Pressable>
+            />
           );
         }}
         ListEmptyComponent={<EmptyState title="Kayıtlı talep yok" icon="file-tray-outline" />}

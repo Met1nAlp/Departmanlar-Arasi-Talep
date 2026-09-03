@@ -24,6 +24,8 @@ import { ErrorView } from '../../design-system/components/ErrorView';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import RequestCard from '../../components/RequestCard';
+import { RequestOrderGroupCard } from '../../design-system/components/RequestOrderGroupCard';
+import { groupRequestsByOrder } from '../../domain/request/groupByOrder';
 import { getRequests } from '../../api/requests';
 import { useRequestUpdates } from '../../hooks/useRequestUpdates';
 import { getProductsByIds } from '../../api/products';
@@ -248,6 +250,10 @@ export default function HomeScreen() {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
+  // Aynı sepetten (orderId) gelen talepler listede ayrı ayrı kart olarak
+  // değil, tek bir sipariş kartı altında gruplanır — bkz. groupByOrder.ts.
+  const orderGroups = groupRequestsByOrder(visibleRequests);
+
   const activeDept = departments.find((d) => d.id === deptFilter);
   const listBottomPadding = insets.bottom + spacing.lg + FAB_HEIGHT + spacing.md;
 
@@ -378,8 +384,8 @@ export default function HomeScreen() {
         <SkeletonList />
       ) : (
         <FlatList
-          data={visibleRequests}
-          keyExtractor={(item) => item.id}
+          data={orderGroups}
+          keyExtractor={(group) => group.key}
           contentContainerStyle={{
             padding: spacing.md,
             paddingBottom: listBottomPadding,
@@ -394,14 +400,26 @@ export default function HomeScreen() {
               colors={[colors.blue]}
             />
           }
-          renderItem={({ item }) => (
-<RequestCard
-  request={item}
-  productName={products[item.productId]}
-  meta={departments.find((d) => d.id === item.departmentId)?.name}
-  onPress={() => navigation.navigate('RequestTracking', { requestId: item.id })}
-/>
-          )}
+          renderItem={({ item: group }) => {
+            const firstRequest = group.requests[0];
+            const totalQty = group.requests.reduce((sum, r) => sum + r.quantity, 0);
+            const departmentName = departments.find((d) => d.id === firstRequest.departmentId)?.name;
+            return (
+              <RequestOrderGroupCard
+                group={group}
+                title={departmentName ?? 'Sipariş'}
+                subtitle={`${group.requests.length} kalem · ${totalQty} adet`}
+                renderItem={(request) => (
+                  <RequestCard
+                    request={request}
+                    productName={products[request.productId]}
+                    meta={departments.find((d) => d.id === request.departmentId)?.name}
+                    onPress={() => navigation.navigate('RequestTracking', { requestId: request.id })}
+                  />
+                )}
+              />
+            );
+          }}
           ListEmptyComponent={
             filter === 'aktif' ? (
               <EmptyState

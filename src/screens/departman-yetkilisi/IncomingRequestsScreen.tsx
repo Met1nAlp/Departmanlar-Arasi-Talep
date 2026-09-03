@@ -15,6 +15,8 @@ import { StatusChip } from '../../design-system/components/StatusChip';
 import { PriorityBadge, Priority } from '../../design-system/components/PriorityBadge';
 import { EmptyState } from '../../design-system/components/EmptyState';
 import { LoadingView } from '../../design-system/components/LoadingView';
+import { RequestOrderGroupCard } from '../../design-system/components/RequestOrderGroupCard';
+import { groupRequestsByOrder } from '../../domain/request/groupByOrder';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import { getRequests } from '../../api/requests';
@@ -44,6 +46,63 @@ function getRelativeTime(iso: string): string {
   if (diffMin < 1) return 'az önce';
   if (diffMin < 60) return `${diffMin} dk önce`;
   return `${Math.floor(diffMin / 60)} sa önce`;
+}
+
+const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
+const isPartial = (r: Request) =>
+  r.fulfilledQuantity !== undefined &&
+  r.fulfilledQuantity > 0 &&
+  r.fulfilledQuantity < r.quantity &&
+  (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
+
+function IncomingRequestRow({
+  request,
+  productName,
+  onPress,
+}: {
+  request: Request;
+  productName?: string;
+  onPress: () => void;
+}) {
+  const priority = request.priority;
+  return (
+    <Pressable
+      onPress={onPress}
+      background="surface"
+      radius="md"
+      style={{
+        width: '100%',
+        padding: spacing.md,
+        alignItems: 'flex-start',
+        borderLeftWidth: 4,
+        borderLeftColor: colors[priorityColors[priority]],
+      }}
+    >
+      <Stack direction="row" justify="space-between" align="flex-start" style={{ width: '100%' }}>
+        <Text variant="bodyBold" numberOfLines={2} style={{ flex: 1, marginRight: spacing.sm }}>
+          {productName}
+        </Text>
+        <StatusChip status={request.status} />
+      </Stack>
+
+      <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
+        {request.requesterName ?? request.requesterId}
+      </Text>
+
+      <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.sm }}>
+        <PriorityBadge priority={priority} />
+        <Stack direction="row" align="center" gap="xs">
+          <Text variant="bodyBold" color="textPrimary">
+            {isPartial(request) ? `${request.fulfilledQuantity}/${request.quantity}` : request.quantity}
+          </Text>
+          <Text variant="caption" color="textMuted">adet</Text>
+          <Text variant="caption" color="textMuted" style={{ marginLeft: spacing.xs }}>
+            · {getRelativeTime(request.createdAt)}
+          </Text>
+        </Stack>
+      </Stack>
+    </Pressable>
+  );
 }
 
 export default function IncomingRequestsScreen() {
@@ -91,13 +150,6 @@ export default function IncomingRequestsScreen() {
 
   if (loading) return <LoadingView />;
 
-  const isTerminal = (r: Request) => r.status === 'IPTAL_EDILDI' || r.status === 'REDDEDILDI';
-  const isPartial = (r: Request) =>
-    r.fulfilledQuantity !== undefined &&
-    r.fulfilledQuantity > 0 &&
-    r.fulfilledQuantity < r.quantity &&
-    (r.status === 'HAZIRLANIYOR' || r.status === 'HAZIR');
-
   const nonCancelled = requests.filter((r) => !isTerminal(r));
 
   const queue = nonCancelled.filter((r) => {
@@ -108,6 +160,9 @@ export default function IncomingRequestsScreen() {
   const sortedRequests = [...queue].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  // Aynı sepetten (orderId) gelen talepler kuyrukta ayrı ayrı değil, tek bir
+  // sipariş kartı altında gruplanır — bkz. groupByOrder.ts.
+  const orderGroups = groupRequestsByOrder(sortedRequests);
 
   const activeScope = nonCancelled.filter((r) => r.status !== 'TESLIM_EDILDI');
   const receivedCount = activeScope.filter((r) => r.status === 'TALEP_ALINDI').length;
@@ -181,8 +236,8 @@ export default function IncomingRequestsScreen() {
       </Box>
 
       <FlatList
-        data={sortedRequests}
-        keyExtractor={(item) => item.id}
+        data={orderGroups}
+        keyExtractor={(group) => group.key}
         contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
         refreshControl={
           <RefreshControl
@@ -192,45 +247,21 @@ export default function IncomingRequestsScreen() {
             colors={[colors.blue]}
           />
         }
-        renderItem={({ item }) => {
-          const priority = item.priority;
+        renderItem={({ item: group }) => {
+          const totalQty = group.requests.reduce((sum, r) => sum + r.quantity, 0);
           return (
-            <Pressable
-              onPress={() => navigation.navigate('RequestDetail', { requestId: item.id })}
-              background="surface"
-              radius="md"
-              style={{
-                width: '100%',
-                padding: spacing.md,
-                alignItems: 'flex-start',
-                borderLeftWidth: 4,
-                borderLeftColor: colors[priorityColors[priority]],
-              }}
-            >
-              <Stack direction="row" justify="space-between" align="flex-start" style={{ width: '100%' }}>
-                <Text variant="bodyBold" numberOfLines={2} style={{ flex: 1, marginRight: spacing.sm }}>
-                  {products[item.productId]}
-                </Text>
-                <StatusChip status={item.status} />
-              </Stack>
-
-              <Text variant="caption" color="textMuted" style={{ marginTop: 2 }}>
-                {item.requesterName ?? item.requesterId}
-              </Text>
-
-              <Stack direction="row" justify="space-between" align="center" style={{ width: '100%', marginTop: spacing.sm }}>
-                <PriorityBadge priority={priority} />
-                <Stack direction="row" align="center" gap="xs">
-                  <Text variant="bodyBold" color="textPrimary">
-                    {isPartial(item) ? `${item.fulfilledQuantity}/${item.quantity}` : item.quantity}
-                  </Text>
-                  <Text variant="caption" color="textMuted">adet</Text>
-                  <Text variant="caption" color="textMuted" style={{ marginLeft: spacing.xs }}>
-                    · {getRelativeTime(item.createdAt)}
-                  </Text>
-                </Stack>
-              </Stack>
-            </Pressable>
+            <RequestOrderGroupCard
+              group={group}
+              title={group.requests[0].requesterName ?? group.requests[0].requesterId}
+              subtitle={`${group.requests.length} kalem · ${totalQty} adet`}
+              renderItem={(request) => (
+                <IncomingRequestRow
+                  request={request}
+                  productName={products[request.productId]}
+                  onPress={() => navigation.navigate('RequestDetail', { requestId: request.id })}
+                />
+              )}
+            />
           );
         }}
         ListEmptyComponent={

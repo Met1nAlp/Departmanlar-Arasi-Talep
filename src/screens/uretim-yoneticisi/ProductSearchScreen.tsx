@@ -16,39 +16,48 @@ import { EmptyState } from '../../design-system/components/EmptyState';
 import { LoadingView } from '../../design-system/components/LoadingView';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
-import { getAllProducts } from '../../api/products';
+import { getProductByQrCode } from '../../api/products';
 
 type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'ProductSearch'>;
+
+const MIN_CODE_LENGTH = 4; // "MPS" + en az 1 karakter — anlamsız her tuş vuruşunda arama yapmayalım
 
 export default function ProductSearchScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<Product | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
 
+  // Envanterde 7.000'i aşkın kalem olduğu için TÜM listeyi çekip ekranda
+  // filtrelemek yerine (eskiden öyleydi, performans sorunu yaratıyordu),
+  // kullanıcı kodun TAMAMINI yazınca (örn. "MPS-001") tek bir arama isteği
+  // atıyoruz — QR okutmayla aynı PROCESS_QR komutu, sonuç tek ürün.
   useEffect(() => {
+    const code = query.trim();
+    if (code.length < MIN_CODE_LENGTH) {
+      setResult(null);
+      setSearched(false);
+      return;
+    }
     let ignore = false;
-    setLoading(true);
-    getAllProducts().then((products) => {
-      if (ignore) return;
-      setAllProducts(products);
-      setLoading(false);
-    });
+    const timeout = setTimeout(() => {
+      setSearching(true);
+      getProductByQrCode(code).then((product) => {
+        if (ignore) return;
+        setResult(product ?? null);
+        setSearched(true);
+        setSearching(false);
+      });
+    }, 300);
     return () => {
       ignore = true;
+      clearTimeout(timeout);
     };
-  }, []);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedQuery(query), 150);
-    return () => clearTimeout(timeout);
   }, [query]);
 
-  const results = allProducts.filter((p) =>
-    p.name.toLowerCase().includes(debouncedQuery.toLowerCase())
-  );
+  const results = result ? [result] : [];
 
   const handleSelect = (product: Product) => {
     navigation.replace('QRScan', { preselectedProduct: product });
@@ -76,14 +85,16 @@ export default function ProductSearchScreen() {
         </Stack>
         <TextField
           icon="search-outline"
-          placeholder="Ürün adı ile ara..."
+          placeholder="Ürün kodunu tam olarak girin (örn. MPS-001)"
           value={query}
           onChangeText={setQuery}
           autoFocus
+          autoCapitalize="characters"
+          autoCorrect={false}
         />
       </Box>
 
-      {loading ? (
+      {searching ? (
         <LoadingView />
       ) : (
         <FlatList
@@ -117,11 +128,19 @@ export default function ProductSearchScreen() {
             </Pressable>
           )}
           ListEmptyComponent={
-            <EmptyState
-              title="Sonuç bulunamadı"
-              description="Farklı bir arama terimi deneyin"
-              icon="search-outline"
-            />
+            searched ? (
+              <EmptyState
+                title="Sonuç bulunamadı"
+                description="Bu koda kayıtlı bir ürün yok — kodu kontrol edip tekrar deneyin"
+                icon="search-outline"
+              />
+            ) : (
+              <EmptyState
+                title="Ürün kodunu girin"
+                description="Etiket üzerindeki tam kodu (örn. MPS-001) yazınca ürün burada görünecek"
+                icon="barcode-outline"
+              />
+            )
           }
         />
       )}

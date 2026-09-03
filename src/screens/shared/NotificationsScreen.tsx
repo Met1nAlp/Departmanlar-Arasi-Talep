@@ -1,6 +1,6 @@
 // src/screens/shared/NotificationsScreen.tsx
 import { useEffect, useState } from 'react';
-import { FlatList, Alert } from 'react-native';
+import { FlatList, Alert, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -90,13 +90,23 @@ export default function NotificationsScreen() {
           borderBottomRightRadius: radius.lg,
         }}
       >
-        <Stack direction="row" align="center" gap="md">
-          <Pressable onPress={() => navigation.goBack()} background="blueMedium" radius="md" accessibilityLabel="Geri">
-            <Ionicons name="chevron-back" size={20} color={colors.white} />
+        <Stack direction="row" align="center" justify="space-between">
+          <Stack direction="row" align="center" gap="md">
+            <Pressable onPress={() => navigation.goBack()} background="blueMedium" radius="md" accessibilityLabel="Geri">
+              <Ionicons name="chevron-back" size={20} color={colors.white} />
+            </Pressable>
+            <Text variant="h2" color="white">
+              Bildirimler
+            </Text>
+          </Stack>
+          <Pressable
+            onPress={() => Linking.openSettings()}
+            background="blueMedium"
+            radius="md"
+            accessibilityLabel="Bildirim ayarlarını aç"
+          >
+            <Ionicons name="settings-outline" size={20} color={colors.white} />
           </Pressable>
-          <Text variant="h2" color="white">
-            Bildirimler
-          </Text>
         </Stack>
       </Box>
 
