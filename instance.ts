@@ -69,10 +69,11 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
   });
 });
 
-// Seri numarası kontrolü: Backend artık her komutta serial_number'ı pos_devices
-// tablosundan kontrol ediyor (serverhandler.cpp). Bağlantı sonrası GET_REQUESTS
-// göndererek cihazın yetkili olup olmadığını doğruluyoruz — DEVICE_NOT_AUTHORIZED
-// döndürürse cihaz henüz sisteme eklenmemiş demektir.
+// Yeni Cihaz Akışı: Bağlantı kurulduğunda cihaz DEVICE_LOGIN_ATTEMPT komutu gönderir.
+// Sunucu cihazın seri numarasını kontrol eder:
+// 1. pos_devices tablosunda varsa -> ok döner, giriş başarılı.
+// 2. pos_devices tablosunda yoksa -> pending_devices (Onay Havuzu) tablosuna ekler,
+//    DEVICE_NOT_APPROVED hatası döner ve uygulama yetkisiz ekranda kalır.
 export function connectMepsanServer(): void {
   if (!isMepsanServerConfigured) {
     useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
@@ -89,21 +90,14 @@ export function connectMepsanServer(): void {
   void mepsanServerClient
     .connect()
     .then(async () => {
-      // Bağlantı kuruldu — şimdi sunucuya bir test komutu göndererek
-      // seri numarasının pos_devices tablosunda kayıtlı olup olmadığını kontrol et.
       try {
-        const testResponse = await mepsanServerClient.send('GET_REQUESTS', {
-          user_id: '',
-          department_id: '',
-        });
-        if (testResponse.status === 'error' && testResponse.error_code === 'DEVICE_NOT_AUTHORIZED') {
+        const loginResponse = await mepsanServerClient.send('DEVICE_LOGIN_ATTEMPT', {});
+        if (loginResponse.status === 'error' && loginResponse.error_code === 'DEVICE_NOT_APPROVED') {
           useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
         } else {
           useConnectionStore.getState().setDeviceAuthStatus('authorized');
         }
       } catch {
-        // Komut zaman aşımına uğradıysa veya başka bir hata olduysa
-        // yine de bağlantı var demektir, ama yetkilendirme belirsiz
         useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
       }
     })
