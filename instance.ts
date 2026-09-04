@@ -92,7 +92,7 @@ export function connectMepsanServer(): void {
     .then(async () => {
       try {
         const loginResponse = await mepsanServerClient.send('DEVICE_LOGIN_ATTEMPT', {});
-        if (loginResponse.status === 'error' && loginResponse.error_code === 'DEVICE_NOT_APPROVED') {
+        if (loginResponse.status === 'error' && String(loginResponse.error_code) === 'DEVICE_NOT_APPROVED') {
           useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
         } else {
           useConnectionStore.getState().setDeviceAuthStatus('authorized');
