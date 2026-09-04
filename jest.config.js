@@ -7,10 +7,4 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/__tests__/**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/'],
-  // react-native paketi node ortamında import edilemiyor (Flow/JSX kaynak) —
-  // testlerimizin tek ihtiyacı olan Dimensions.get için minimal bir sahte
-  // sürüm kullanılıyor (bkz. src/__mocks__/react-native.ts dosya başı notu).
-  moduleNameMapper: {
-    '^react-native$': '<rootDir>/src/__mocks__/react-native.ts',
-  },
 };
