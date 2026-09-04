@@ -78,13 +78,16 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
   });
 });
 
-// AUTH_REQUEST'e artık gerek yok — seri numarası, Barış tarafından doğrudan
-// veritabanına ekleniyor (kayıt kodu/onboarding akışı yok). Sunucu, her
-// komutta serial_number'ı kontrol ediyor; seri numarası tabloda
-// varsa herhangi bir komut (CARD_LOGIN dahil) zaten çalışır. Bu yüzden
-// burada sadece WebSocket bağlantısını kuruyoruz — asıl "yetkili mi değil
-// mi" sorusunun gerçek cevabı, ilk komut (CardLoginScreen'deki CARD_LOGIN)
-// gönderildiğinde sunucudan gelecek.
+// YENİ CİHAZ AKIŞI (Barış, 2026-09-04): bağlantı kurulunca cihaz artık
+// DEVICE_LOGIN_ATTEMPT komutu gönderiyor. Sunucu cihazın seri numarasını
+// kontrol ediyor:
+//   1. pos_devices tablosunda varsa -> ok döner, giriş başarılı.
+//   2. pos_devices tablosunda yoksa -> pending_devices (Onay Havuzu)
+//      tablosuna ekler, "error_code": "DEVICE_NOT_APPROVED" döner ve
+//      uygulama yetkisiz ekranda kalır (yönetici onaylayana kadar).
+// Eskiden bağlantı kurulur kurulmaz "authorized" sayılıp asıl kontrolü
+// CARD_LOGIN'e bırakıyorduk — artık cihaz onayı CARD_LOGIN'den ÖNCE, ayrı
+// bir adım.
 export function connectMepsanServer(): void {
   console.log('[WS] connectMepsanServer() çağrıldı');
   if (!isMepsanServerConfigured) {
@@ -103,11 +106,22 @@ export function connectMepsanServer(): void {
 
   void mepsanServerClient
     .connect()
-    .then(() => {
-      // Bağlantı kuruldu — MAC yetkili mi değil mi burada henüz bilmiyoruz,
-      // ama artık CardLoginScreen'e geçebiliriz, gerçek kontrol orada olur.
-      console.log('[WS] bağlantı kuruldu');
-      useConnectionStore.getState().setDeviceAuthStatus('authorized');
+    .then(async () => {
+      console.log('[WS] bağlantı kuruldu, DEVICE_LOGIN_ATTEMPT gönderiliyor');
+      try {
+        const loginResponse = await mepsanServerClient.send('DEVICE_LOGIN_ATTEMPT', {});
+        console.log('[WS] DEVICE_LOGIN_ATTEMPT cevabı:', JSON.stringify(loginResponse).slice(0, 300));
+        if (loginResponse.status === 'error' && String(loginResponse.error_code) === 'DEVICE_NOT_APPROVED') {
+          console.log('[WS] cihaz onay havuzunda bekliyor (DEVICE_NOT_APPROVED)');
+          useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
+        } else {
+          console.log('[WS] cihaz yetkili');
+          useConnectionStore.getState().setDeviceAuthStatus('authorized');
+        }
+      } catch (err) {
+        console.log('[WS] DEVICE_LOGIN_ATTEMPT başarısız:', err instanceof Error ? err.message : err);
+        useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
+      }
     })
     .catch((err) => {
       console.log('[WS] bağlantı kurulamadı:', err instanceof Error ? err.message : err);
