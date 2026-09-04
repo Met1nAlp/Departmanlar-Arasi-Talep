@@ -15,6 +15,7 @@ import { spacing, colors, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import { getRequestById, cancelRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { warningFeedback } from '../../design-system/feedback';
 import { Request } from '../../types';
 
 type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'CancelRequest'>;
@@ -51,6 +52,7 @@ const handleCancel = async () => {
   if (!request || !selectedReason) return;
   const reason = note.trim() ? `${selectedReason} — ${note.trim()}` : selectedReason;
   await cancelRequest(request, reason);
+  void warningFeedback();
   setConfirmVisible(false);
   navigation.popToTop();
 };

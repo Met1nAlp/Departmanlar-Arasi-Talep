@@ -32,9 +32,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   authError: null,
 
   /** CARD_LOGIN başarılı olunca çağrılır — bkz. screens/auth/CardLoginScreen.tsx. */
-  loginWithCardUser: (user) => set({ currentUser: user, authError: null }),
+  loginWithCardUser: (user) => {
+    console.log('[AUTH] giriş yapıldı:', user.id, user.role);
+    set({ currentUser: user, authError: null });
+  },
 
-  logout: () => set({ currentUser: null }),
+  logout: () => {
+    console.log('[AUTH] çıkış yapıldı');
+    set({ currentUser: null });
+  },
 
   clearAuthError: () => set({ authError: null }),
 }));

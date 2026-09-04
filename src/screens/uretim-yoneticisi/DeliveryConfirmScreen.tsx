@@ -18,7 +18,7 @@ import { useActiveUser } from '../../store/authStore';
 import { canConfirmDelivery } from '../../domain/request/legacyAdapter';
 import { scale } from '../../design-system/tokens/scale';
 import { readCardUid, isNfcSupported, cancelReading } from '../../infrastructure/nfc/NfcReader';
-import { cardDetectedFeedback } from '../../design-system/feedback';
+import { cardDetectedFeedback, successFeedback, warningFeedback } from '../../design-system/feedback';
 
 type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'DeliveryConfirm'>;
 type Rt = RouteProp<UretimYoneticisiStackParamList, 'DeliveryConfirm'>;
@@ -70,14 +70,17 @@ export default function DeliveryConfirmScreen() {
       // kullanıcı kartı okuyucuya basılı tutmaya devam etmesin.
       void cardDetectedFeedback();
       if (scannedUid !== user.cardUid) {
+        void warningFeedback();
         setStep('mismatch');
         return;
       }
 
       setStep('confirming');
       await updateRequestStatus(request, 'TESLIM_EDILDI');
+      void successFeedback();
       navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Home' }] }));
     } catch {
+      void warningFeedback();
       setStep('mismatch');
     }
   };

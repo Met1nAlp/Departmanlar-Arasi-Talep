@@ -22,6 +22,7 @@ import { colors, spacing, radius } from '../../design-system/tokens';
 import { statusLabels, statusOrder } from '../../utils/statusLabels';
 import { getRequestById, updateRequestStatus, fulfillRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { successFeedback } from '../../design-system/feedback';
 import { useActiveUser } from '../../store/authStore';
 import {
   LEGACY_NEXT_STATUS as nextStatusMap,
@@ -85,6 +86,7 @@ export default function RequestDetailScreen() {
     setConfirmVisible(false);
     setUpdating(true);
     await updateRequestStatus(request, next);
+    void successFeedback();
     setUpdating(false);
     navigation.goBack();
   };
@@ -104,6 +106,7 @@ export default function RequestDetailScreen() {
     setPartialModalVisible(false);
     setUpdating(true);
     await fulfillRequest(request, next, qty);
+    void successFeedback();
     setUpdating(false);
     navigation.goBack();
   };

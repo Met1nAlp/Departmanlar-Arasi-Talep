@@ -82,10 +82,10 @@ export default function DeviceUnauthorizedScreen() {
       <Box style={{ flex: 1, paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg, paddingHorizontal: spacing.lg }} background="white">
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text variant="h2" style={{ textAlign: 'center' }}>
-            Cihazın Seri Numarasını Girin
+            Cihaz Kimliği Otomatik Alınamadı
           </Text>
           <Text variant="body" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.sm }}>
-            Ayarlar → Telefon Hakkında altındaki Seri Numarasını girin.
+            Bu cihazda otomatik kimlik okunamadı — Ayarlar → Telefon Hakkında altındaki Seri Numarasını elle girin.
           </Text>
 
           <Box style={{ marginTop: spacing.lg }}>
@@ -134,7 +134,7 @@ export default function DeviceUnauthorizedScreen() {
           Bu cihaz yetkili değil
         </Text>
         <Text variant="body" color="textMuted" style={{ textAlign: 'center', marginTop: spacing.sm }}>
-          Aşağıdaki seri numarasının MEPSAN veritabanına eklendiğinden emin olun.
+          Aşağıdaki cihaz kimliğinin MEPSAN veritabanına eklendiğinden emin olun (bu kimlik otomatik alındı).
         </Text>
         <Box background="surface" radius="md" padding="md" style={{ marginTop: spacing.lg, width: '100%' }}>
           <Text variant="bodyBold" style={{ textAlign: 'center' }}>
@@ -142,7 +142,7 @@ export default function DeviceUnauthorizedScreen() {
           </Text>
         </Box>
         <Button
-          label="Seri Numarasını Değiştir"
+          label="Kimliği Elle Değiştir"
           onPress={() => clearSerialNumber()}
           variant="secondary"
           style={{ marginTop: spacing.md, width: '100%' }}

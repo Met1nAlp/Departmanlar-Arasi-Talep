@@ -3,6 +3,7 @@ import { colors, typography } from '../constants/theme';
 import { UretimYoneticisiStackParamList } from './types';
 
 import HomeScreen from '../screens/uretim-yoneticisi/HomeScreen';
+import DepartmentSelectScreen from '../screens/uretim-yoneticisi/DepartmentSelectScreen';
 import QRScanScreen from '../screens/uretim-yoneticisi/QRScanScreen';
 import RequestCreatedScreen from '../screens/uretim-yoneticisi/RequestCreatedScreen';
 import RequestTrackingScreen from '../screens/uretim-yoneticisi/RequestTrackingScreen';
@@ -24,6 +25,7 @@ export default function UretimYoneticisiNavigator() {
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DepartmentSelect" component={DepartmentSelectScreen} options={{ headerShown: false }} />
       <Stack.Screen name="QRScan" component={QRScanScreen} options={{ headerShown: false }} />
       <Stack.Screen
         name="RequestCreated"

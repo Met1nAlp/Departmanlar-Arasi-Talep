@@ -14,6 +14,7 @@ import { LoadingView } from '../../design-system/components/LoadingView';
 import { spacing, colors, radius } from '../../design-system/tokens';
 import { getRequestById, rejectRequest } from '../../api/requests';
 import { getProductsByIds } from '../../api/products';
+import { warningFeedback } from '../../design-system/feedback';
 import { Request } from '../../types';
 import { scale } from '../../design-system/tokens/scale';
 
@@ -58,6 +59,7 @@ export default function RejectRequestScreen() {
     if (!request || !selectedReason) return;
     const reason = note.trim() ? `${selectedReason} — ${note.trim()}` : selectedReason;
     await rejectRequest(request, reason);
+    void warningFeedback();
     setConfirmVisible(false);
     navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'IncomingRequests' }] }));
   };

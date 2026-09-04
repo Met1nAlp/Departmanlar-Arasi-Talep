@@ -12,3 +12,4 @@ export * from './RequestStatusStrip';
 export * from './LoadingView';
 export * from './ErrorView';
 export * from './RequestOrderGroupCard';
+export * from './CartGroupList';

@@ -8,8 +8,9 @@ export type AuthStackParamList = {
 
 export type UretimYoneticisiStackParamList = {
   Home: undefined;
-  ProductSearch: undefined;
-  QRScan: { preselectedProduct?: Product };
+  DepartmentSelect: undefined;
+  ProductSearch: { departmentId: string; departmentName: string };
+  QRScan: { departmentId: string; departmentName: string; preselectedProduct?: Product };
   RequestCreated: {
     requestIds: string[];
     /** Departmana göre gruplanmış sepet özeti — özet ekranında departman bazlı gösterim için. */

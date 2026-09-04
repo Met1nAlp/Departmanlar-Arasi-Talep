@@ -198,7 +198,7 @@ export default function HomeScreen() {
 
   const handleNewRequest = () => {
     useCartStore.getState().clear();
-    navigation.navigate('QRScan', {});
+    navigation.navigate('DepartmentSelect');
   };
 
   if (loadError) {
@@ -403,17 +403,21 @@ export default function HomeScreen() {
           renderItem={({ item: group }) => {
             const firstRequest = group.requests[0];
             const totalQty = group.requests.reduce((sum, r) => sum + r.quantity, 0);
-            const departmentName = departments.find((d) => d.id === firstRequest.departmentId)?.name;
+            // Departman katalogu backend'de henüz yok (mock), bu yüzden
+            // eşleşmezse sunucudan gelen ham departmentId'yi gösteriyoruz —
+            // boş bırakmaktansa "bir şey" göstermek daha iyi.
+            const departmentName =
+              departments.find((d) => d.id === firstRequest.departmentId)?.name || firstRequest.departmentId;
             return (
               <RequestOrderGroupCard
                 group={group}
-                title={departmentName ?? 'Sipariş'}
+                title={departmentName || 'Sipariş'}
                 subtitle={`${group.requests.length} kalem · ${totalQty} adet`}
                 renderItem={(request) => (
                   <RequestCard
                     request={request}
                     productName={products[request.productId]}
-                    meta={departments.find((d) => d.id === request.departmentId)?.name}
+                    meta={departments.find((d) => d.id === request.departmentId)?.name || request.departmentId}
                     onPress={() => navigation.navigate('RequestTracking', { requestId: request.id })}
                   />
                 )}

@@ -22,20 +22,35 @@ function getKnownStatusesKey(userId: string): string {
   return `knownRequestStatuses:${userId}`;
 }
 
+function getKnownInfoKey(userId: string): string {
+  return `knownRequestInfo:${userId}`;
+}
+
 type KnownStatusMap = Record<string, RequestStatus>;
 
-async function getKnownStatuses(database: Database, key: string): Promise<KnownStatusMap> {
+/** Talep silindiğinde artık GET_REQUESTS'ten çekilemiyor — bu yüzden ürün/departman
+ * bilgisini, talebi son gördüğümüz anda ayrıca (durumdan bağımsız) saklıyoruz. Böylece
+ * silinme bildiriminde "hangi ürün, kimin talebiydi" bilgisini gösterebiliyoruz. */
+interface KnownRequestInfo {
+  productId: string;
+  departmentId: string;
+  requesterId: string;
+  requesterName?: string;
+}
+type KnownInfoMap = Record<string, KnownRequestInfo>;
+
+async function getJsonMap<T>(database: Database, key: string): Promise<Record<string, T>> {
   const collection = database.get<KvStoreEntry>('kv_store');
   const rows = await collection.query(Q.where('key', key)).fetch();
   if (!rows.length) return {};
   try {
-    return JSON.parse(rows[0].value) as KnownStatusMap;
+    return JSON.parse(rows[0].value) as Record<string, T>;
   } catch {
     return {};
   }
 }
 
-async function saveKnownStatuses(database: Database, key: string, map: KnownStatusMap): Promise<void> {
+async function saveJsonMap<T>(database: Database, key: string, map: Record<string, T>): Promise<void> {
   const collection = database.get<KvStoreEntry>('kv_store');
   const rows = await collection.query(Q.where('key', key)).fetch();
   await database.write(async () => {
@@ -52,22 +67,41 @@ async function saveKnownStatuses(database: Database, key: string, map: KnownStat
   });
 }
 
+async function getKnownStatuses(database: Database, key: string): Promise<KnownStatusMap> {
+  return getJsonMap<RequestStatus>(database, key);
+}
+
+async function saveKnownStatuses(database: Database, key: string, map: KnownStatusMap): Promise<void> {
+  return saveJsonMap<RequestStatus>(database, key, map);
+}
+
+async function recordKnownInfo(database: Database, userId: string, request: Request): Promise<void> {
+  const key = getKnownInfoKey(userId);
+  const info = await getJsonMap<KnownRequestInfo>(database, key);
+  info[request.id] = {
+    productId: request.productId,
+    departmentId: request.departmentId,
+    requesterId: request.requesterId,
+    requesterName: request.requesterName,
+  };
+  await saveJsonMap(database, key, info);
+}
+
 /**
  * Bir işlemi KENDİMİZ yaptığımızda hemen çağrılır (bkz. api/requests.ts).
  * Sunucudan broadcast geri geldiğinde artık "farklı bir durum" olarak
- * görünmeyecek, bildirim tetiklenmeyecek.
+ * görünmeyecek, bildirim tetiklenmeyecek. Talebin tamamını (id/status'un
+ * yanında productId/departmentId/requesterId da) alır — silinme anında
+ * hangi ürünle ilgili olduğunu gösterebilmek için bu bilgi de saklanır.
  */
-export async function recordOwnStatusChange(
-  database: Database,
-  requestId: string,
-  status: RequestStatus
-): Promise<void> {
+export async function recordOwnStatusChange(database: Database, request: Request): Promise<void> {
   const user = useAuthStore.getState().currentUser;
   if (!user) return;
   const key = getKnownStatusesKey(user.id);
   const known = await getKnownStatuses(database, key);
-  known[requestId] = status;
+  known[request.id] = request.status;
   await saveKnownStatuses(database, key, known);
+  await recordKnownInfo(database, user.id, request);
 }
 
 export async function hasAnyKnownStatus(database: Database, userId: string): Promise<boolean> {
@@ -106,15 +140,38 @@ export async function getKnownStatus(database: Database, requestId: string): Pro
   return known[requestId];
 }
 
-/** REQUEST_DELETED sonrası known map'ten temizlemek için — artık var olmayan bir talebin durumu takip edilmemeli. */
+/**
+ * Bir talebin en son bilinen ürün/departman/talep-eden bilgisini döner —
+ * silinme bildiriminde "hangi ürün" gösterebilmek için (bkz. getKnownStatus).
+ */
+export async function getKnownRequestInfo(
+  database: Database,
+  requestId: string
+): Promise<KnownRequestInfo | undefined> {
+  const user = useAuthStore.getState().currentUser;
+  if (!user) return undefined;
+  const info = await getJsonMap<KnownRequestInfo>(database, getKnownInfoKey(user.id));
+  return info[requestId];
+}
+
+/** REQUEST_DELETED sonrası known map'lerden temizlemek için — artık var olmayan bir talebin durumu/bilgisi takip edilmemeli. */
 export async function forgetKnownStatus(database: Database, requestId: string): Promise<void> {
   const user = useAuthStore.getState().currentUser;
   if (!user) return;
-  const key = getKnownStatusesKey(user.id);
-  const known = await getKnownStatuses(database, key);
-  if (!(requestId in known)) return;
-  delete known[requestId];
-  await saveKnownStatuses(database, key, known);
+
+  const statusKey = getKnownStatusesKey(user.id);
+  const known = await getKnownStatuses(database, statusKey);
+  if (requestId in known) {
+    delete known[requestId];
+    await saveKnownStatuses(database, statusKey, known);
+  }
+
+  const infoKey = getKnownInfoKey(user.id);
+  const info = await getJsonMap<KnownRequestInfo>(database, infoKey);
+  if (requestId in info) {
+    delete info[requestId];
+    await saveJsonMap(database, infoKey, info);
+  }
 }
 
 export interface NotificationDecision {
@@ -158,6 +215,7 @@ export async function resolveNotificationForRequest(
 
   known[request.id] = request.status;
   await saveKnownStatuses(database, key, known);
+  await recordKnownInfo(database, user.id, request);
 
   return { notify, isNew };
 }

@@ -4,6 +4,7 @@ import { createAudioPlayer, type AudioPlayer } from 'expo-audio';
 
 const successSound = require('../../assets/sounds/success.wav');
 const scanSound = require('../../assets/sounds/scan.wav');
+const warningSound = require('../../assets/sounds/warning.wav');
 
 /**
  * Kısa bir ses efektini bir kereliğine çalıp kaynağı serbest bırakır.
@@ -41,10 +42,12 @@ export async function successFeedback() {
 
 export async function errorFeedback() {
   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  playOnce(warningSound);
 }
 
 export async function warningFeedback() {
   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  playOnce(warningSound);
 }
 
 export async function tapFeedback() {

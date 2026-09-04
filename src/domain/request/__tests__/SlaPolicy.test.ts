@@ -6,7 +6,7 @@ describe('SlaPolicy', () => {
     it('ACIL için 15 dakikalık SLA hesaplar', () => {
     const created = new Date('2026-08-12T10:00:00Z');
     const due = slaDueAt(created, 'ACIL');
-    expect(due.toISOString()).toBe('2026-08-12T10:05:00.000Z');
+    expect(due.toISOString()).toBe('2026-08-12T10:15:00.000Z');
   });
 
   it('URGENT için 15, NORMAL için 60 dakika', () => {

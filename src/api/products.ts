@@ -79,21 +79,36 @@ async function upsertProductsLocally(products: Product[]): Promise<void> {
 export async function getProductByQrCode(qrCode: string): Promise<Product | undefined> {
   try {
     const response = await mepsanServerClient.send('PROCESS_QR', { qr_code: qrCode });
+    // GEÇİCİ TEŞHİS LOGU — PROCESS_QR cevabında departman bilgisi var mı yok mu
+    // netleştirmek için (sorun bulununca kaldırılacak).
+    console.log('[PROCESS_QR] cevap:', JSON.stringify(response).slice(0, 500));
     if (response.status === 'ok' && response.item_info) {
       const info = response.item_info as Record<string, unknown>;
       if (info.found) {
-        return {
-          id: qrCode,
-          name: String(info.name ?? ''),
-          qrCode,
-          departmentId: '',
-        };
+        // PROCESS_QR departman bilgisini bazı sunucu sürümlerinde vermiyor —
+        // varsa (department/department_id) onu kullan, yoksa yerel katalogda
+        // (daha önce GET_PARTS'tan senkronize edilmiş) bu QR koda ait bir
+        // kayıt var mı diye bakıp oradan tamamlamayı dene.
+        let departmentId = String(info.department ?? info.department_id ?? '');
+        if (!departmentId) {
+          const localMatch = await findLocalProductByQrCode(qrCode);
+          departmentId = localMatch?.departmentId ?? '';
+        }
+        const product: Product = { id: qrCode, name: String(info.name ?? ''), qrCode, departmentId };
+        // Tekil sonuçları da yerel kataloğa yazıyoruz — böylece bu ürün bir
+        // dahaki sefere (offline dahil) findLocalProductByQrCode'dan bulunur.
+        void upsertProductsLocally([product]);
+        return product;
       }
     }
   } catch {
     // sunucuya ulaşılamadı — aşağıda yerel kataloğa düşülüyor
   }
 
+  return findLocalProductByQrCode(qrCode);
+}
+
+async function findLocalProductByQrCode(qrCode: string): Promise<Product | undefined> {
   const barcodesCol = database.get<PartBarcodeModel>('part_barcodes');
   const matches = await barcodesCol.query(Q.where('raw_value', qrCode)).fetch();
   if (!matches.length) return undefined;
@@ -103,19 +118,18 @@ export async function getProductByQrCode(qrCode: string): Promise<Product | unde
   return mapLocalPartToProduct(part);
 }
 
+/**
+ * Birden fazla ürünü isimleriyle çözmek için kullanılır (talep listelerinde
+ * ürün adı gösterme). ESKİDEN GET_PARTS'ı filtresiz (department: '') çağırıp
+ * TÜM envanteri (7.000+ kalem) çekip yerelde filtreliyordu — bu, envanter
+ * optimizasyonu için düzelttiğimiz TAM O SORUNDU (zaman aşımı / performans).
+ * Artık her id için ayrı ayrı, tekil PROCESS_QR araması (getProductByQrCode)
+ * yapılıyor — ProductSearchScreen'deki aynı prensip.
+ */
 export async function getProductsByIds(ids: string[]): Promise<Product[]> {
-  if (!ids.length) return [];
-  try {
-    const response = await mepsanServerClient.send('GET_PARTS', { department: '' });
-    if (response.status !== 'ok') throw new Error(response.message ?? 'GET_PARTS başarısız');
-    const data = Array.isArray(response.data) ? response.data : [];
-    const mapped = data.map((raw) => mapServerPartToProduct(raw as Record<string, unknown>));
-    void upsertProductsLocally(mapped);
-    return mapped.filter((p) => ids.includes(p.id));
-  } catch {
-    const partsCol = database.get<PartModel>('parts');
-    const parts = await partsCol.query(Q.where('id', Q.oneOf(ids))).fetch();
-    return Promise.all(parts.map(mapLocalPartToProduct));
-  }
+  const uniqueIds = [...new Set(ids)].filter(Boolean);
+  if (!uniqueIds.length) return [];
+  const results = await Promise.all(uniqueIds.map((id) => getProductByQrCode(id)));
+  return results.filter((p): p is Product => !!p);
 }
 

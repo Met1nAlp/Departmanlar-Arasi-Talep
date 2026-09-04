@@ -22,7 +22,7 @@
 // Mobil taraf bunu aşağıda dinliyor; backend event'i göndermeye başladığı an
 // hiçbir kod değişikliği gerekmeden devreye girer.
 
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { MepsanServerClient, type MepsanEventEnvelope } from './MepsanServerClient';
 import { MEPSAN_SERVER_URL, isMepsanServerConfigured, MEPSAN_DEFAULT_PASSKEY } from '../../config/mepsanServerConfig';
 import { mapServerRequestToRequest } from './mappers';
@@ -38,7 +38,10 @@ export const mepsanServerClient = new MepsanServerClient({
 });
 
 // Plan Bölüm 9.2 deseniyle tutarlı: bağlantı durumu her zaman görünür olmalı.
-mepsanServerClient.onStateChange((status) => useConnectionStore.getState().setStatus(status));
+mepsanServerClient.onStateChange((status) => {
+  console.log('[WS] durum değişti:', status);
+  useConnectionStore.getState().setStatus(status);
+});
 
 /** GET_REQUESTS'i filtresiz çağırıp id'ye göre bulur — GET_REQUEST_BY_ID komutu yok. */
 export async function fetchRequestById(id: string) {
@@ -50,10 +53,13 @@ export async function fetchRequestById(id: string) {
 }
 
 mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
+  console.log('[WS] olay geldi:', event.event_name);
+
   if (event.event_name === 'USER_DELETED') {
     const deletedUserId = String(event.payload?.id ?? '');
     const currentUser = useAuthStore.getState().currentUser;
     if (deletedUserId && currentUser && String(currentUser.id) === deletedUserId) {
+      console.log('[AUTH] USER_DELETED bu kullanıcıyla eşleşti, logout ediliyor');
       useAuthStore.getState().logout();
       Alert.alert('Hesabınız kaldırıldı', 'Hesabınız sistemden kaldırıldı. Devam etmek için tekrar giriş yapmanız gerekiyor.');
     }
@@ -65,7 +71,10 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
   if (typeof id !== 'string' || !id) return;
 
   void fetchRequestById(id).then((request) => {
-    if (request) emitRequestStatusChanged(request);
+    if (request) {
+      console.log('[REQUEST] güncelleme yayına düştü:', id, '→', request.status);
+      emitRequestStatusChanged(request);
+    }
   });
 });
 
@@ -77,12 +86,15 @@ mepsanServerClient.onEvent((event: MepsanEventEnvelope) => {
 // mi" sorusunun gerçek cevabı, ilk komut (CardLoginScreen'deki CARD_LOGIN)
 // gönderildiğinde sunucudan gelecek.
 export function connectMepsanServer(): void {
+  console.log('[WS] connectMepsanServer() çağrıldı');
   if (!isMepsanServerConfigured) {
+    console.log('[WS] sunucu adresi ayarlı değil, bağlanılmıyor');
     useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
     return;
   }
   const deviceUid = useDeviceStore.getState().deviceUid;
   if (!deviceUid) {
+    console.log('[WS] cihaz seri numarası yok, bağlanılmıyor');
     useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
     return;
   }
@@ -94,13 +106,28 @@ export function connectMepsanServer(): void {
     .then(() => {
       // Bağlantı kuruldu — MAC yetkili mi değil mi burada henüz bilmiyoruz,
       // ama artık CardLoginScreen'e geçebiliriz, gerçek kontrol orada olur.
+      console.log('[WS] bağlantı kuruldu');
       useConnectionStore.getState().setDeviceAuthStatus('authorized');
     })
-    .catch(() => {
+    .catch((err) => {
+      console.log('[WS] bağlantı kurulamadı:', err instanceof Error ? err.message : err);
       useConnectionStore.getState().setDeviceAuthStatus('unauthorized');
     });
 }
 
 export function disconnectMepsanServer(): void {
+  console.log('[WS] disconnectMepsanServer() çağrıldı');
   mepsanServerClient.disconnect();
 }
+
+// Uygulama arka plandan öne geldiğinde (ekran kapat/aç, uygulamalar arası
+// geçiş) WebSocket bağlantısı OS tarafından koparılmış olabilir — bu durumda
+// backoff süresini beklemeden hemen yeniden bağlanmayı dener. connect() zaten
+// var olan bir soket varsa hiçbir şey yapmadan döner, o yüzden burada tekrar
+// çağırmak zararsız (idempotent).
+AppState.addEventListener('change', (nextState) => {
+  console.log('[APP] durum değişti:', nextState);
+  if (nextState === 'active') {
+    connectMepsanServer();
+  }
+});

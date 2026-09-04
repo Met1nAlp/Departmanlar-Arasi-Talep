@@ -9,10 +9,17 @@ import { navigationRef } from '../../navigation/navigationRef';
 import { getProductsByIds } from '../../api/products';
 import { getRequestById } from '../../api/requests';
 import { checkMissedUpdates } from './missedUpdates';
-import { resolveNotificationForRequest, wasRequestKnownToUser, forgetKnownStatus, getKnownStatus } from './knownStatusStore';
+import {
+  resolveNotificationForRequest,
+  wasRequestKnownToUser,
+  forgetKnownStatus,
+  getKnownStatus,
+  getKnownRequestInfo,
+} from './knownStatusStore';
 import { database } from '../db';
 import NotificationRecord from '../db/models/Notification';
 import { useAuthStore } from '../../store/authStore';
+import { statusLabels } from '../../utils/statusLabels';
 import type { Request, RequestStatus } from '../../types';
 
 Notifications.setNotificationHandler({
@@ -128,26 +135,49 @@ const ALREADY_PREPARED_STATUSES: RequestStatus[] = ['HAZIRLANIYOR', 'HAZIR'];
  * REQUEST_DELETED (backend'de henüz YOK — Barış eklemeli): bir talep
  * webden/adminden silindiğinde sunucu diğer broadcast'lerle aynı zarfla
  * { type: "event", event_name: "REQUEST_DELETED", payload: { id } } yayınlamalı.
+ *
  * Talep artık GET_REQUESTS'te dönmediği için ürün/departman bilgisine
- * ulaşamıyoruz — bu yüzden "bu kullanıcıyı ilgilendiriyor mu" kararını
- * knownStatusStore'daki kayıttan (bu talebi daha önce görmüş mü) veriyoruz.
+ * doğrudan ulaşamıyoruz — bu yüzden hem "bu kullanıcıyı ilgilendiriyor mu"
+ * kararını hem de bildirim İÇERİĞİNİ (ürün adı, hangi aşamadaydı)
+ * knownStatusStore'daki kayıttan (bu talebi daha önce görmüş müyüz, o anda
+ * ne biliyorduk) veriyoruz.
+ *
+ * ÖNEMLİ: bu fonksiyon HER cihazda kendi currentUser'ına göre çalışır — yani
+ * hem talebi oluşturan saha personelinin/üretim yöneticisinin cihazında, hem
+ * de ilgili departman yetkilisinin cihazında AYRI AYRI tetiklenir (ikisi de
+ * resolveNotificationForRequest'te "isConcerned" sayıldığı için kendi known
+ * map'lerinde bu talebi tutuyor olacaklar). Ekstra bir "iki tarafa da gönder"
+ * mantığına gerek yok, mimari zaten bunu sağlıyor.
  */
 async function handleRequestDeleted(requestId: string): Promise<void> {
   const known = await wasRequestKnownToUser(database, requestId);
   if (!known) return;
 
-  // Unutmadan ÖNCE son bilinen durumu oku — silinme anında hazırlık
-  // aşamasında mıydı ayrımını bundan sonra yapamayız.
-  const lastKnownStatus = await getKnownStatus(database, requestId);
+  // Unutmadan ÖNCE son bilinen durumu/bilgiyi oku — silinme anında hangi
+  // ürün, hangi aşamadaydı ayrımını bundan sonra yapamayız.
+  const [lastKnownStatus, info] = await Promise.all([
+    getKnownStatus(database, requestId),
+    getKnownRequestInfo(database, requestId),
+  ]);
+
+  const product = info ? (await getProductsByIds([info.productId]))[0] : undefined;
+  const productLabel = product?.name ?? `Talep ${requestId.toUpperCase()}`;
+  const stageLabel = lastKnownStatus ? statusLabels[lastKnownStatus] : undefined;
 
   if (lastKnownStatus && ALREADY_PREPARED_STATUSES.includes(lastKnownStatus)) {
     await showNotification(
       '⚠️ Hazırlanan talep iptal edildi',
-      `${requestId.toUpperCase()} numaralı talep hazırlık aşamasındayken sistemden silindi — malzemeyi geri koymanız gerekebilir.`,
+      `${productLabel} (${requestId.toUpperCase()}) "${stageLabel}" aşamasındayken sistemden silindi — malzemeyi geri koymanız gerekebilir.`,
       requestId
     );
   } else {
-    await showNotification('Talep silindi', `${requestId.toUpperCase()} numaralı talep sistemden kaldırıldı.`, requestId);
+    await showNotification(
+      'Talep silindi',
+      stageLabel
+        ? `${productLabel} (${requestId.toUpperCase()}) "${stageLabel}" aşamasındayken sistemden kaldırıldı.`
+        : `${productLabel} (${requestId.toUpperCase()}) sistemden kaldırıldı.`,
+      requestId
+    );
   }
 
   await forgetKnownStatus(database, requestId);

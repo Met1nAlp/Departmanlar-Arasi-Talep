@@ -4,7 +4,7 @@ import { mockRequests } from '../mocks/requests';
 import { emitRequestStatusChanged } from './socketEvents';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 import { mepsanServerClient, fetchRequestById } from '../infrastructure/mepsanServer/instance';
-import { mapServerRequestToRequest, buildUpdateStatusPayload, buildCancelRequestPayload, buildRejectRequestPayload, buildFulfillRequestPayload, type CreateOrderPayload } from '../infrastructure/mepsanServer/mappers';
+import { mapServerRequestToRequest, buildUpdateStatusPayload, buildCancelRequestPayload, buildRejectRequestPayload, buildFulfillRequestPayload } from '../infrastructure/mepsanServer/mappers';
 import { database } from '../infrastructure/db';
 import { recordOwnStatusChange } from '../infrastructure/notifications/knownStatusStore';
 
@@ -14,10 +14,16 @@ export async function getRequests(params: { userId?: string; departmentId?: stri
       user_id: params.userId ?? '',
       department_id: params.departmentId ?? '',
     });
+    // GEÇİCİ TEŞHİS LOGU — "refresh içerik güncellemiyor" şikayetini araştırmak için.
+    // Sorun bulununca kaldırılacak.
+    console.log('[GET_REQUESTS] cevap:', JSON.stringify(response).slice(0, 500));
     if (response.status !== 'ok') throw new Error(response.message ?? 'GET_REQUESTS başarısız');
     const data = Array.isArray(response.data) ? response.data : [];
-    return data.map((raw) => mapServerRequestToRequest(raw as Record<string, unknown>));
-  } catch {
+    const mapped = data.map((raw) => mapServerRequestToRequest(raw as Record<string, unknown>));
+    console.log('[GET_REQUESTS] map edilen kayıt sayısı:', mapped.length);
+    return mapped;
+  } catch (err) {
+    console.warn('[GET_REQUESTS] SUNUCUDAN ALINAMADI, mock veriye düşülüyor. Hata:', err);
     return mockRequests.filter((r) =>
       params.userId ? r.requesterId === params.userId : params.departmentId ? r.departmentId === params.departmentId : true
     );
@@ -39,10 +45,16 @@ export async function getRequestById(id: string): Promise<Request | undefined> {
 /**
  * Sepet (çoklu eşya) siparişi oluşturur. Sepetteki TÜM eşyalar (aynı
  * departmana ait olmalı — bir siparişin tek bir supplier departmanı vardır)
- * tek bir order_id altında, TEK bir CREATE_REQUEST mesajıyla (items dizisi
- * ile) sunucuya gönderilir. Yerelde her eşya için ayrı bir Request kaydı
- * tutulmaya devam eder (mevcut takip ekranları eşya bazlı çalışıyor) —
- * hepsi aynı orderId'yi taşır, aralarındaki bağ bununla kurulur.
+ * aynı yerel orderId'yi taşır (bkz. groupByOrder.ts — talep listelerinde
+ * bunlar tek bir sipariş kartı altında gruplanır) — ama sunucuya HER ÜRÜN
+ * İÇİN AYRI bir CREATE_REQUEST mesajı gönderilir.
+ *
+ * NOT (2026-09-05): Önceden tüm items'ı tek mesajda (order_id + items[])
+ * göndermeyi denemiştik ama gerçek sunucu bunu desteklemiyor — sadece tekil
+ * id/product_id/quantity okuyor (bkz. mappers.ts buildCreateRequestPayload
+ * dosya başı notu). O formatla çoklu ürünlü siparişlerde ilk ürün eksik/adsız
+ * görünüyor, diğerleri hiç oluşmuyordu. Barış'ın backend'i items[] formatını
+ * destekleyecek şekilde güncellenene kadar TEKİL mesaj formatına dönüldü.
  */
 export async function createOrder(input: {
   departmentId: string;
@@ -68,28 +80,25 @@ export async function createOrder(input: {
     createdAt,
   }));
 
+  console.log('[REQUEST] yeni sipariş oluşturuluyor:', orderId, '·', newRequests.length, 'kalem ·', input.departmentId);
+
   newRequests.forEach((request) => {
     mockRequests.push(request); // optimistic update — sunucu onayı beklenmez
     emitRequestStatusChanged(request);
   });
 
-  const orderPayload: CreateOrderPayload = {
-    orderId,
-    requesterId: input.requesterId,
-    departmentId: input.departmentId,
-    status: 'TALEP_ALINDI',
-    createdAt,
-    items: input.items,
-  };
-  await outboxWorker.enqueue('CREATE_REQUEST', orderId, orderPayload);
+  await Promise.all(
+    newRequests.map((request) => outboxWorker.enqueue('CREATE_REQUEST', request.id, request))
+  );
   await refreshPendingSyncBadge();
   void outboxWorker.processQueue().then(refreshPendingSyncBadge);
-  await Promise.all(newRequests.map((request) => recordOwnStatusChange(database, request.id, request.status)));
+  await Promise.all(newRequests.map((request) => recordOwnStatusChange(database, request)));
 
   return newRequests;
 }
 
 export async function updateRequestStatus(current: Request, status: RequestStatus): Promise<Request> {
+  console.log('[REQUEST] durum güncelleniyor:', current.id, current.status, '→', status);
   const now = new Date().toISOString();
 
   const updated: Request = {
@@ -106,7 +115,7 @@ export async function updateRequestStatus(current: Request, status: RequestStatu
   else mockRequests.push(updated);
 
   emitRequestStatusChanged(updated);
-  await recordOwnStatusChange(database, current.id, status);
+  await recordOwnStatusChange(database, updated);
 
   const payload = buildUpdateStatusPayload(current.id, status, now);
   await outboxWorker.enqueue('UPDATE_REQUEST_STATUS', current.id, payload);
@@ -117,6 +126,7 @@ export async function updateRequestStatus(current: Request, status: RequestStatu
 }
 
 export async function cancelRequest(current: Request, reason: string): Promise<Request> {
+  console.log('[REQUEST] iptal ediliyor:', current.id, '·', reason);
   const now = new Date().toISOString();
 
   const updated: Request = {
@@ -131,7 +141,7 @@ export async function cancelRequest(current: Request, reason: string): Promise<R
   else mockRequests.push(updated);
 
   emitRequestStatusChanged(updated);
-  await recordOwnStatusChange(database, current.id, 'IPTAL_EDILDI');
+  await recordOwnStatusChange(database, updated);
 
   const payload = buildCancelRequestPayload(current.id, reason, now);
   await outboxWorker.enqueue('CANCEL_REQUEST', current.id, payload);
@@ -142,6 +152,7 @@ export async function cancelRequest(current: Request, reason: string): Promise<R
 }
 
 export async function rejectRequest(current: Request, reason: string): Promise<Request> {
+  console.log('[REQUEST] reddediliyor:', current.id, '·', reason);
   const now = new Date().toISOString();
 
   const updated: Request = {
@@ -157,7 +168,11 @@ export async function rejectRequest(current: Request, reason: string): Promise<R
 
   emitRequestStatusChanged(updated);
 
-  await recordOwnStatusChange(database, current.id, 'IPTAL_EDILDI');
+  // NOT: sunucu CANCEL_REQUEST ve REJECT_REQUEST'i AYNI IPTAL_EDILDI durumuna
+  // düşürüyor (yerelde ayrı REDDEDILDI göstersek de) — known map'e sunucunun
+  // geri yankılayacağı değeri (IPTAL_EDILDI) yazmazsak, echo geldiğinde
+  // "farklı durum" sanılıp gereksiz bildirim tetiklenir.
+  await recordOwnStatusChange(database, { ...updated, status: 'IPTAL_EDILDI' });
 
   const payload = buildRejectRequestPayload(current.id, reason, now);
   await outboxWorker.enqueue('REJECT_REQUEST', current.id, payload);
@@ -193,7 +208,7 @@ export async function fulfillRequest(
   else mockRequests.push(updated);
 
   emitRequestStatusChanged(updated);
-  await recordOwnStatusChange(database, current.id, nextStatus);
+  await recordOwnStatusChange(database, updated);
 
   const payload = buildFulfillRequestPayload(current.id, nextStatus, fulfilledQuantity, now);
   await outboxWorker.enqueue('FULFILL_REQUEST', current.id, payload);

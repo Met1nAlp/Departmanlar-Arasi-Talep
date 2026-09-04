@@ -14,14 +14,17 @@ import { database } from '../db';
 import { OutboxWorker, type Dispatch } from './OutboxWorker';
 import { useConnectionStore } from '../../store/connectionStore';
 import { mepsanServerClient } from '../mepsanServer/instance';
-import { buildCreateOrderPayload, type CreateOrderPayload } from '../mepsanServer/mappers';
+import { buildCreateRequestPayload } from '../mepsanServer/mappers';
+import type { Request } from '../../types';
 
 const dispatch: Dispatch = async (entry) => {
   if (entry.operation === 'CREATE_REQUEST') {
+    console.log('[REQUEST] CREATE_REQUEST sunucuya gönderiliyor:', entry.targetId);
     const response = await mepsanServerClient.send(
       'CREATE_REQUEST',
-      buildCreateOrderPayload(entry.payload as CreateOrderPayload)
+      buildCreateRequestPayload(entry.payload as Request)
     );
+    console.log('[REQUEST] CREATE_REQUEST cevabı:', response.status, response.message ?? '');
     if (response.status === 'ok') return { ok: true };
     return { ok: false, statusCode: 422, message: response.message ?? 'CREATE_REQUEST reddedildi' };
   }
@@ -30,28 +33,34 @@ const dispatch: Dispatch = async (entry) => {
   // entry.payload zaten { id, status, timestamp_field, timestamp_value }
   // şeklinde geliyor (bkz. api/requests.ts -> buildUpdateStatusPayload).
     if (entry.operation === 'UPDATE_REQUEST_STATUS') {
+    console.log('[REQUEST] UPDATE_REQUEST_STATUS sunucuya gönderiliyor:', entry.targetId);
     const response = await mepsanServerClient.send(
       'UPDATE_REQUEST_STATUS',
       entry.payload as Record<string, unknown>
     );
+    console.log('[REQUEST] UPDATE_REQUEST_STATUS cevabı:', response.status, response.message ?? '');
     if (response.status === 'ok') return { ok: true };
     return { ok: false, statusCode: 422, message: response.message ?? 'UPDATE_REQUEST_STATUS reddedildi' };
   }
 
   if (entry.operation === 'CANCEL_REQUEST') {
+    console.log('[REQUEST] CANCEL_REQUEST sunucuya gönderiliyor:', entry.targetId);
     const response = await mepsanServerClient.send(
       'CANCEL_REQUEST',
       entry.payload as Record<string, unknown>
     );
+    console.log('[REQUEST] CANCEL_REQUEST cevabı:', response.status, response.message ?? '');
     if (response.status === 'ok') return { ok: true };
     return { ok: false, statusCode: 422, message: response.message ?? 'CANCEL_REQUEST reddedildi' };
   }
 
   if (entry.operation === 'REJECT_REQUEST') {
+    console.log('[REQUEST] REJECT_REQUEST sunucuya gönderiliyor:', entry.targetId);
     const response = await mepsanServerClient.send(
       'REJECT_REQUEST',
       entry.payload as Record<string, unknown>
     );
+    console.log('[REQUEST] REJECT_REQUEST cevabı:', response.status, response.message ?? '');
     if (response.status === 'ok') return { ok: true };
     return { ok: false, statusCode: 422, message: response.message ?? 'REJECT_REQUEST reddedildi' };
   }

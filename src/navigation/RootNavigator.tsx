@@ -1,12 +1,14 @@
 import { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { View, ActivityIndicator , Text} from 'react-native';
+import { View, ActivityIndicator, Text, Alert } from 'react-native';
+import { tryRealSerialNumber } from '../infrastructure/device/deviceIdentifier';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../store/authStore';
 import { useDeviceStore } from '../store/deviceStore';
 import { colors } from '../constants/theme';
 import { connectRealtime, disconnectRealtime } from '../infrastructure/realtime/instance';
 import { connectMepsanServer, disconnectMepsanServer } from '../infrastructure/mepsanServer/instance';
+import { startUserValidityCheck } from '../infrastructure/mepsanServer/userValidityCheck';
 import { outboxWorker, refreshPendingSyncBadge } from '../infrastructure/sync/instance';
 import { syncCatalog } from '../infrastructure/sync/CatalogSync';
 import { database } from '../infrastructure/db';
@@ -30,9 +32,25 @@ export default function RootNavigator() {
     hydrateDevice();
   }, [hydrateDevice]);
 
+  // GEÇİCİ TEŞHİS — gerçek fabrika seri numarası (Build.getSerial()) gerçekten
+  // denenip sonucu ekrana basılıyor (kullanıcı isteği: "bir dene ne hata
+  // alıyoruz görelim"). Sonuç görüldükten sonra bu blok + deviceIdentifier.ts
+  // içindeki tryRealSerialNumber + react-native-device-info paketi kaldırılabilir.
   useEffect(() => {
+    void tryRealSerialNumber().then(({ value, error }) => {
+      console.log('[DEVICE] GERÇEK SERİ NUMARASI DENEMESİ →', 'value:', value, '| error:', error);
+      Alert.alert(
+        'Gerçek Seri Numarası Denemesi (debug)',
+        `Sonuç: "${value}"\n\nHata: ${error ?? 'yok'}`
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    console.log('[APP] uygulama açıldı, sunucuya bağlanılıyor');
     connectMepsanServer();
     return () => {
+      console.log('[APP] RootNavigator kapanıyor, bağlantı kesiliyor');
       disconnectMepsanServer();
     };
   }, []);
@@ -58,6 +76,13 @@ export default function RootNavigator() {
     const cleanup = initNotificationService();
     return cleanup;
   }, []);
+
+  // Kullanıcı silindiğinde anında logout — bkz. userValidityCheck.ts dosya
+  // başı notu (backend USER_DELETED event'i eklemeden önce de çalışan yedek yol).
+  useEffect(() => {
+    if (!currentUser) return;
+    return startUserValidityCheck();
+  }, [currentUser]);
 
   // Uygulama her açıldığında (currentUser hazır olunca), kapalıyken kaçırılan
   // durum değişikliklerini kontrol et ve bildirim göster.

@@ -1,6 +1,6 @@
 // src/screens/uretim-yoneticisi/QRScanScreen.tsx
 import { useEffect, useState } from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { CommonActions, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -14,6 +14,7 @@ import { Pressable } from '../../design-system/primitives/Pressable';
 import { Button } from '../../design-system/components/Button';
 import { NumericKeypad } from '../../design-system/components/NumericKeypad';
 import { ScanTarget } from '../../design-system/components/ScanTarget';
+import { CartGroupList } from '../../design-system/components/CartGroupList';
 import { colors, spacing, radius } from '../../design-system/tokens';
 import { scale } from '../../design-system/tokens/scale';
 import { getProductByQrCode } from '../../api/products';
@@ -67,16 +68,20 @@ export default function QRScanScreen() {
   const insets = useSafeAreaInsets();
   const cart = useCartStore();
 
+  const { departmentId, departmentName } = route.params;
+
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(!!route.params?.preselectedProduct);
   const [product, setProduct] = useState<Product | null>(route.params?.preselectedProduct ?? null);
   const [notFound, setNotFound] = useState(false);
+  const [mismatchDept, setMismatchDept] = useState<string | null>(null);
   const [quantity, setQuantity] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [lastScannedCode, setLastScannedCode] = useState('');
   const [departmentNames, setDepartmentNames] = useState<Record<string, string>>({});
   const [expandedDepartments, setExpandedDepartments] = useState<Set<string>>(new Set());
+  const [cartModalVisible, setCartModalVisible] = useState(false);
 
   useEffect(() => {
     getDepartments()
@@ -106,27 +111,42 @@ export default function QRScanScreen() {
     if (scanned) return;
     setScanned(true);
     setNotFound(false);
+    setMismatchDept(null);
 
     const gs1 = parseGs1Barcode(data);
     const lookupCode = gs1?.gtin ?? data;
     setLastScannedCode(lookupCode);
 
     const result = await getProductByQrCode(lookupCode);
-    if (result) setProduct(result);
-    else setNotFound(true);
+    if (!result) {
+      setNotFound(true);
+      return;
+    }
+    // Kısıtlayıcı mod: departman seçim ekranında seçilen departmana ait
+    // olmayan bir ürün okutulursa reddedilir (bkz. DepartmentSelectScreen
+    // dosya başı notu).
+    if (result.departmentId && result.departmentId !== departmentId) {
+      setMismatchDept(departmentNames[result.departmentId] ?? result.departmentId);
+      return;
+    }
+    setProduct(result);
   };
 
   const handleRescan = () => {
     setScanned(false);
     setProduct(null);
     setNotFound(false);
+    setMismatchDept(null);
     setQuantity('');
     setLastScannedCode('');
   };
 
   const handleAddAnother = () => {
     if (product && quantity !== '' && Number(quantity) > 0) {
-      cart.addLine(product.id, product.name, product.departmentId, Number(quantity));
+      // Ürünün kendi departmentId'si güvenilmez olabilir (PROCESS_QR bazen
+      // vermiyor) — burada zaten eşleştiği doğrulanmış tek departman var,
+      // onu kullanıyoruz.
+      cart.addLine(product.id, product.name, departmentId, Number(quantity));
     }
     handleRescan();
   };
@@ -139,7 +159,7 @@ export default function QRScanScreen() {
       finalLines.push({
         partId: product.id,
         partName: product.name,
-        departmentId: product.departmentId,
+        departmentId,
         qtyRequested: Number(quantity),
       });
     }
@@ -147,32 +167,23 @@ export default function QRScanScreen() {
 
     setSubmitting(true);
 
-    // Sepetteki eşyalar farklı departmanlara ait olabilir — her sipariş TEK
-    // departmana gider, bu yüzden departmana göre gruplayıp her grup için
-    // ayrı bir sipariş (order_id + items[]) gönderiyoruz.
-    const groupedByDepartment = new Map<string, typeof finalLines>();
-    for (const line of finalLines) {
-      const group = groupedByDepartment.get(line.departmentId) ?? [];
-      group.push(line);
-      groupedByDepartment.set(line.departmentId, group);
-    }
+    // Departman seçim ekranında seçilmiş TEK departman var — sepetteki tüm
+    // eşyalar zaten ona ait (okutma/aramada kısıtlanıyor), tek sipariş yeterli.
+    const createdRequests = await createOrder({
+      departmentId,
+      items: finalLines.map((line) => ({ productId: line.partId, quantity: line.qtyRequested })),
+      requesterId: user.id,
+      requesterName: user.name,
+      priority: DEFAULT_PRIORITY,
+    });
+    const requestIds = createdRequests.map((r) => r.id);
+    const groups = [
+      {
+        departmentId,
+        items: finalLines.map((line) => ({ partId: line.partId, partName: line.partName, qty: line.qtyRequested })),
+      },
+    ];
 
-    const requestIds: string[] = [];
-    const groups: { departmentId: string; items: { partId: string; partName: string; qty: number }[] }[] = [];
-    for (const [departmentId, lines] of groupedByDepartment) {
-      const createdRequests = await createOrder({
-        departmentId,
-        items: lines.map((line) => ({ productId: line.partId, quantity: line.qtyRequested })),
-        requesterId: user.id,
-        requesterName: user.name,
-        priority: DEFAULT_PRIORITY,
-      });
-      requestIds.push(...createdRequests.map((r) => r.id));
-      groups.push({
-        departmentId,
-        items: lines.map((line) => ({ partId: line.partId, partName: line.partName, qty: line.qtyRequested })),
-      });
-    }
     cart.clear();
     setSubmitting(false);
     navigation.dispatch(
@@ -212,16 +223,78 @@ export default function QRScanScreen() {
         />
         <ScanTarget
           title="Parça Etiketini Okut"
-          subtitle="Yeni talep"
+          subtitle={`Yeni talep · ${departmentName}`}
           onBack={() => navigation.goBack()}
           hint="Karekodu çerçeve içinde tutun"
-          onManualEntry={() => navigation.replace('ProductSearch')}
+          onManualEntry={() => navigation.replace('ProductSearch', { departmentId, departmentName })}
           torchOn={torchOn}
           onToggleTorch={() => setTorchOn((v) => !v)}
           footerNote="Etiket yıpranmışsa parça numarasını elle girin"
-          rightActionLabel={cart.lines.length > 0 ? (submitting ? '...' : `Bitir (${cart.lines.length})`) : undefined}
-          onRightAction={cart.lines.length > 0 && !submitting ? handleSubmitAll : undefined}
+          rightActionLabel={cart.lines.length > 0 ? `Sepet (${cart.lines.length})` : undefined}
+          onRightAction={cart.lines.length > 0 ? () => setCartModalVisible(true) : undefined}
         />
+
+        <Modal
+          visible={cartModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setCartModalVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <Box
+              background="white"
+              style={{
+                maxHeight: '80%',
+                padding: spacing.lg,
+                paddingBottom: insets.bottom + spacing.lg,
+                borderTopLeftRadius: radius.lg,
+                borderTopRightRadius: radius.lg,
+              }}
+            >
+              <Stack direction="row" justify="space-between" align="center" style={{ marginBottom: spacing.md }}>
+                <Text variant="h2">Sepetiniz</Text>
+                <Pressable
+                  onPress={() => setCartModalVisible(false)}
+                  background="surface"
+                  radius="md"
+                  style={{ width: scale(36), height: scale(36), minWidth: scale(36), minHeight: scale(36) }}
+                  accessibilityLabel="Kapat"
+                >
+                  <Ionicons name="close" size={20} color={colors.textPrimary} />
+                </Pressable>
+              </Stack>
+
+              <ScrollView style={{ maxHeight: '70%' }}>
+                <CartGroupList
+                  cartGroups={cartGroups}
+                  departmentNames={departmentNames}
+                  expandedDepartments={expandedDepartments}
+                  onToggleDepartment={toggleDepartment}
+                  onRemoveLine={cart.removeLine}
+                />
+              </ScrollView>
+
+              <Button
+                testID="cart-modal-submit"
+                label={`Talebi Oluştur (${cart.lines.length} ürün)`}
+                onPress={() => {
+                  setCartModalVisible(false);
+                  void handleSubmitAll();
+                }}
+                loading={submitting}
+                disabled={submitting || cart.lines.length === 0}
+                style={{ marginTop: spacing.md }}
+              />
+              <Button
+                label="Taramaya Devam Et"
+                onPress={() => setCartModalVisible(false)}
+                variant="secondary"
+                disabled={submitting}
+                style={{ marginTop: spacing.sm }}
+              />
+            </Box>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -240,6 +313,21 @@ export default function QRScanScreen() {
               {lastScannedCode}
             </Text>
           </Box>
+          <Button label="Tekrar Okut" onPress={handleRescan} fullWidth={false} style={{ paddingHorizontal: spacing.xl }} />
+        </View>
+      </Box>
+    );
+  }
+
+  if (mismatchDept) {
+    return (
+      <Box style={{ flex: 1 }} background="white">
+        <ScreenHeader title="Departman Uyuşmuyor" onBack={() => navigation.goBack()} danger />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg }}>
+          <Ionicons name="alert-circle-outline" size={scale(48)} color={colors.danger} style={{ marginBottom: spacing.md }} />
+          <Text variant="body" color="textPrimary" style={{ textAlign: 'center', marginBottom: spacing.md }}>
+            Bu ürün "{departmentName}" departmanına değil, "{mismatchDept}" departmanına ait. Bu talep akışında sadece {departmentName} ürünleri okutulabilir.
+          </Text>
           <Button label="Tekrar Okut" onPress={handleRescan} fullWidth={false} style={{ paddingHorizontal: spacing.xl }} />
         </View>
       </Box>
@@ -291,63 +379,13 @@ export default function QRScanScreen() {
                 {cart.lines.length} ürün · {cartGroups.length} departman
               </Text>
             </Stack>
-            <Stack gap="xs">
-              {cartGroups.map(([departmentId, lines]) => {
-                const expanded = expandedDepartments.has(departmentId);
-                const groupQty = lines.reduce((sum, line) => sum + line.qtyRequested, 0);
-                return (
-                  <Box key={departmentId} background="surface" radius="md" style={{ overflow: 'hidden' }}>
-                    <Pressable
-                      onPress={() => toggleDepartment(departmentId)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
-                        paddingHorizontal: spacing.md,
-                        paddingVertical: spacing.sm,
-                      }}
-                      accessibilityLabel={`${departmentNames[departmentId] ?? departmentId} kalemlerini ${expanded ? 'gizle' : 'göster'}`}
-                    >
-                      <Stack direction="row" align="center" gap="sm" style={{ flex: 1, marginRight: spacing.sm }}>
-                        <Ionicons name="business-outline" size={scale(16)} color={colors.blue} />
-                        <Text variant="bodyBold" numberOfLines={1} style={{ flex: 1 }}>
-                          {departmentNames[departmentId] ?? departmentId}
-                        </Text>
-                      </Stack>
-                      <Stack direction="row" align="center" gap="xs">
-                        <Text variant="caption" color="textMuted">
-                          {lines.length} kalem · {groupQty} adet
-                        </Text>
-                        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={scale(16)} color={colors.textMuted} />
-                      </Stack>
-                    </Pressable>
-
-                    {expanded && (
-                      <Box style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}>
-                        <Box style={{ height: 1, backgroundColor: colors.border, marginBottom: spacing.xs }} />
-                        <Stack gap="xs">
-                          {lines.map((line) => (
-                            <Stack key={line.partId} direction="row" justify="space-between" align="center">
-                              <Text variant="body" numberOfLines={1} style={{ flex: 1 }}>
-                                {line.partName} <Text variant="caption" color="textMuted">× {line.qtyRequested}</Text>
-                              </Text>
-                              <Pressable
-                                onPress={() => cart.removeLine(line.partId)}
-                                style={{ minWidth: scale(32), minHeight: scale(32) }}
-                                accessibilityLabel={`${line.partName} sepetten çıkar`}
-                              >
-                                <Ionicons name="close" size={scale(18)} color={colors.danger} />
-                              </Pressable>
-                            </Stack>
-                          ))}
-                        </Stack>
-                      </Box>
-                    )}
-                  </Box>
-                );
-              })}
-            </Stack>
+            <CartGroupList
+              cartGroups={cartGroups}
+              departmentNames={departmentNames}
+              expandedDepartments={expandedDepartments}
+              onToggleDepartment={toggleDepartment}
+              onRemoveLine={cart.removeLine}
+            />
           </Box>
         )}
       </ScrollView>

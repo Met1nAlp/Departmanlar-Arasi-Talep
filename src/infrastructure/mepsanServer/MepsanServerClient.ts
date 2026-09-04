@@ -35,6 +35,7 @@ export interface MepsanResponse {
 }
 
 interface PendingRequest {
+  command: string;
   resolve: (response: MepsanResponse) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -155,7 +156,9 @@ export class MepsanServerClient {
         reject(new Error(`"${command}" isteği zaman aşımına uğradı`));
       }, this.requestTimeoutMs);
 
-      this.pendingQueue.push({ resolve, reject, timeout });
+      this.pendingQueue.push({ command, resolve, reject, timeout });
+      // GEÇİCİ TEŞHİS LOGU — FIFO cevap eşleşmesini izlemek için (sorun bulununca kaldırılacak).
+      console.log(`[WS>] ${command} gönderildi, kuyrukta ${this.pendingQueue.length} istek var`);
 
       try {
         this.socket!.send(JSON.stringify(message));
@@ -207,6 +210,8 @@ export class MepsanServerClient {
 
     // Broadcast değil — sıradaki bekleyen isteğin cevabı (FIFO).
     const pending = this.pendingQueue.shift();
+    // GEÇİCİ TEŞHİS LOGU (sorun bulununca kaldırılacak).
+    console.log(`[WS<] cevap geldi, eşleştirilen komut: ${pending?.command ?? '(kuyruk boş!)'}`, raw.slice(0, 300));
     if (!pending) {
       return;
     }
@@ -227,7 +232,11 @@ export class MepsanServerClient {
     const delay = reconnectDelayMs(this.reconnectAttempt);
     this.reconnectAttempt += 1;
     this.reconnectTimer = setTimeout(() => {
-      void this.connect();
+      // connect()'in reddi burada YAKALANMIYORDU — sunucuya her ulaşılamadığında
+      // (örn. yanlış ağdayken) her yeniden deneme "Uncaught (in promise)" uyarısı
+      // basıyordu. Hata zaten onerror/onclose üzerinden state'e ve bir sonraki
+      // scheduleReconnect çağrısına yansıyor, burada ekstra işlem gerekmiyor.
+      this.connect().catch(() => {});
     }, delay);
   }
 

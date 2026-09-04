@@ -112,7 +112,7 @@ export default function AllRequestsScreen() {
         contentContainerStyle={{ padding: spacing.md, paddingBottom: insets.bottom + spacing.lg, flexGrow: 1, gap: spacing.sm }}
         renderItem={({ item: group }) => {
           const firstRequest = group.requests[0];
-          const deptName = departments.find((d) => d.id === firstRequest.departmentId)?.name ?? '—';
+          const deptName = departments.find((d) => d.id === firstRequest.departmentId)?.name || firstRequest.departmentId || '—';
           const totalQty = group.requests.reduce((sum, r) => sum + r.quantity, 0);
           return (
             <RequestOrderGroupCard
@@ -120,7 +120,7 @@ export default function AllRequestsScreen() {
               title={deptName}
               subtitle={`${group.requests.length} kalem · ${totalQty} adet`}
               renderItem={(request) => {
-                const requestDeptName = departments.find((d) => d.id === request.departmentId)?.name ?? '—';
+                const requestDeptName = departments.find((d) => d.id === request.departmentId)?.name || request.departmentId || '—';
                 return (
                   <Pressable
                     onPress={() => navigation.navigate('AuditTimeline', { requestId: request.id })}

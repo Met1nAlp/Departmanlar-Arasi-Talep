@@ -60,35 +60,31 @@ export function mapServerRequestToRequest(raw: Record<string, unknown>): Request
 }
 
 // ---------------------------------------------------------------------------
-// CREATE_REQUEST — Sepet (çoklu eşya) modeli. Eskiden her eşya kendi
-// CREATE_REQUEST'iyle (tekil product_id/quantity) gönderiliyordu; artık aynı
-// sipariş içindeki TÜM eşyalar tek bir order_id altında `items` dizisiyle TEK
-// mesajda gidiyor (Barış'ın dokümanı, 2026-09-01). Dikkat: items elemanlarının
-// kendi id'si YOK — sunucu bunları order_id'ye bağlı olarak kendi üretiyor.
+// CREATE_REQUEST — GERİ ALINDI (2026-09-05): "sepette items[] dizisiyle TEK
+// mesaj" formatına geçmiştik ama gerçek sunucu (serverhandler.cpp) hâlâ TEKİL
+// alanlar okuyor — id/requester_id/department_id/product_id/quantity üst
+// seviyede, `items` diye bir şey YOK. Bunu doğruladık: çoklu ürünlü siparişte
+// sunucu `id` alanını (biz `order_id` gönderdiğimiz için) boş buluyor,
+// isteği reddediyor ya da eksik/yanlış kayıt oluşturuyor — "ilk ürün görünüyor
+// ama adı yok, diğerleri hiç yok" şikayetinin sebebi bu. Barış'ın backend'i
+// items[] formatını destekleyecek şekilde güncellenmeden bu formatı TEKRAR
+// kullanmıyoruz. Sepet/çoklu-ürün deneyimi YEREL tarafta (orderId ile
+// gruplama, bkz. api/requests.ts createOrder + groupByOrder.ts) korunuyor,
+// sadece TELE (sunucuya giden) format eski kanıtlanmış tekil şekle döndü:
+// her ürün için AYRI bir CREATE_REQUEST mesajı.
 // ---------------------------------------------------------------------------
 
-export interface CreateOrderItem {
-  productId: string;
-  quantity: number;
-}
-
-export interface CreateOrderPayload {
-  orderId: string;
-  requesterId: string;
-  departmentId: string;
-  status: RequestStatus;
-  createdAt: string;
-  items: CreateOrderItem[];
-}
-
-export function buildCreateOrderPayload(order: CreateOrderPayload): Record<string, unknown> {
+export function buildCreateRequestPayload(request: Request): Record<string, unknown> {
   return {
-    order_id: order.orderId,
-    requester_id: order.requesterId,
-    department_id: order.departmentId,
-    status: order.status,
-    created_at: order.createdAt,
-    items: order.items.map((item) => ({ product_id: item.productId, qty: item.quantity })),
+    id: request.id,
+    requester_id: request.requesterId,
+    requester_name: request.requesterName ?? '',
+    department_id: request.departmentId,
+    product_id: request.productId,
+    quantity: request.quantity,
+    priority: request.priority,
+    status: request.status,
+    created_at: request.createdAt,
   };
 }
 

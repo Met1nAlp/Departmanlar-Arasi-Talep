@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { UretimYoneticisiStackParamList } from '../../navigation/types';
@@ -19,14 +19,17 @@ import { scale } from '../../design-system/tokens/scale';
 import { getProductByQrCode } from '../../api/products';
 
 type Nav = NativeStackNavigationProp<UretimYoneticisiStackParamList, 'ProductSearch'>;
+type Rt = RouteProp<UretimYoneticisiStackParamList, 'ProductSearch'>;
 
 const MIN_CODE_LENGTH = 4; // "MPS" + en az 1 karakter — anlamsız her tuş vuruşunda arama yapmayalım
 
 export default function ProductSearchScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<Rt>();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [result, setResult] = useState<Product | null>(null);
+  const [mismatch, setMismatch] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
 
@@ -38,6 +41,7 @@ export default function ProductSearchScreen() {
     const code = query.trim();
     if (code.length < MIN_CODE_LENGTH) {
       setResult(null);
+      setMismatch(false);
       setSearched(false);
       return;
     }
@@ -46,7 +50,16 @@ export default function ProductSearchScreen() {
       setSearching(true);
       getProductByQrCode(code).then((product) => {
         if (ignore) return;
-        setResult(product ?? null);
+        // Kısıtlayıcı mod: departman seçim ekranında seçilen departmana ait
+        // olmayan bir ürün, bu akışta "bulunamadı" sayılır (bkz. QRScanScreen
+        // dosya başı notu — aynı kural QR okutmada da geçerli).
+        if (product && product.departmentId && product.departmentId !== route.params.departmentId) {
+          setResult(null);
+          setMismatch(true);
+        } else {
+          setResult(product ?? null);
+          setMismatch(false);
+        }
         setSearched(true);
         setSearching(false);
       });
@@ -55,12 +68,16 @@ export default function ProductSearchScreen() {
       ignore = true;
       clearTimeout(timeout);
     };
-  }, [query]);
+  }, [query, route.params.departmentId]);
 
   const results = result ? [result] : [];
 
   const handleSelect = (product: Product) => {
-    navigation.replace('QRScan', { preselectedProduct: product });
+    navigation.replace('QRScan', {
+      departmentId: route.params.departmentId,
+      departmentName: route.params.departmentName,
+      preselectedProduct: product,
+    });
   };
 
   return (
@@ -79,9 +96,14 @@ export default function ProductSearchScreen() {
           <Pressable onPress={() => navigation.goBack()} background="blueMedium" radius="md" accessibilityLabel="Geri">
             <Ionicons name="chevron-back" size={20} color={colors.white} />
           </Pressable>
-          <Text variant="h2" color="white">
-            Ürün Ara
-          </Text>
+          <Box style={{ flex: 1 }}>
+            <Text variant="caption" color="white" style={{ opacity: 0.75, letterSpacing: 1 }}>
+              {route.params.departmentName.toUpperCase()}
+            </Text>
+            <Text variant="h2" color="white">
+              Ürün Ara
+            </Text>
+          </Box>
         </Stack>
         <TextField
           icon="search-outline"
@@ -128,7 +150,13 @@ export default function ProductSearchScreen() {
             </Pressable>
           )}
           ListEmptyComponent={
-            searched ? (
+            mismatch ? (
+              <EmptyState
+                title="Bu departmana ait değil"
+                description={`Bu ürün "${route.params.departmentName}" departmanına ait değil.`}
+                icon="alert-circle-outline"
+              />
+            ) : searched ? (
               <EmptyState
                 title="Sonuç bulunamadı"
                 description="Bu koda kayıtlı bir ürün yok — kodu kontrol edip tekrar deneyin"

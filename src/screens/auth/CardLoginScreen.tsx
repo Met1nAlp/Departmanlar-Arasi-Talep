@@ -31,7 +31,9 @@ export default function CardLoginScreen() {
   const startReading = async () => {
     setState('reading');
     try {
+      console.log('[AUTH] kart okutuluyor...');
       const cardUid = await readCardUid();
+      console.log('[AUTH] kart okundu, uid:', cardUid);
       const payload = { nfc_uid: cardUid };
 
       // Kart algılandığı anda (sunucu cevabı gelmeden ÖNCE) titreşim + ses —
@@ -40,19 +42,24 @@ export default function CardLoginScreen() {
       void cardDetectedFeedback();
       setState('verifying');
 
+      console.log('[AUTH] CARD_LOGIN gönderiliyor');
       const response = await mepsanServerClient.send('CARD_LOGIN', payload);
+      console.log('[AUTH] CARD_LOGIN cevabı:', JSON.stringify(response).slice(0, 300));
       const result = parseCardLoginResponse(response as CardLoginRawResponse, cardUid);
 
       if (result.outcome !== 'success') {
+        console.log('[AUTH] giriş reddedildi:', result.outcome, result.message);
         void errorFeedback();
         setErrorMessage(result.message);
         setState(result.outcome === 'not_found' ? 'not_found' : 'error');
         return;
       }
 
+      console.log('[AUTH] giriş başarılı:', result.user.id, result.user.role);
       void successFeedback();
       loginWithCardUser(result.user);
     } catch (error) {
+      console.log('[AUTH] giriş sırasında hata:', error instanceof Error ? error.message : error);
       void errorFeedback();
       setErrorMessage('Bağlantı hatası. Lütfen tekrar deneyin.');
       setState('error');

@@ -125,7 +125,12 @@ export default function IncomingRequestsScreen() {
         getDepartments(),
       ]);
       setRequests(reqs);
-      setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? '');
+      // NOT: CARD_LOGIN, departman_yetkilisi için user.departmentId alanına
+      // zaten OKUNABILIR ADI koyuyor (id değil — bkz. mappers.ts
+      // mapCardLoginResponseToUser dosya başı notu). Mock departman
+      // kataloğuyla eşleştirmeye çalışmak (kod bazlı) bu yüzden hep
+      // başarısız oluyordu — doğrudan kendisini kullanıyoruz.
+      setDepartmentName(departments.find((d) => d.id === user.departmentId)?.name ?? user.departmentId ?? '');
       const productList = await getProductsByIds(reqs.map((r) => r.productId));
       setProducts(Object.fromEntries(productList.map((p) => [p.id, p.name])));
       setLoading(false);
